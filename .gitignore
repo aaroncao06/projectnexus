@@ -5,3 +5,6 @@ node_modules/
 dist/
 .vite/
 neo4j_data/
+
+*.csv
+*.parquet
