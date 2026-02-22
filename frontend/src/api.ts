@@ -3,12 +3,18 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export interface Person {
   email: string;
   name: string;
+  cluster?: number;
 }
 
 export interface Edge {
   source: string;
   target: string;
-  properties: Record<string, unknown>;
+  properties: {
+    summary?: string;
+    email_count?: number;
+    comments?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface GraphData {

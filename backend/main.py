@@ -16,7 +16,7 @@ app.add_middleware(
 def get_full_graph():
     """Return all nodes and relationships."""
     nodes = read_query(
-        "MATCH (p:Person) RETURN p.email AS email, p.name AS name"
+        "MATCH (p:Person) RETURN p.email AS email, p.name AS name, p.cluster AS cluster"
     )
     edges = read_query(
         "MATCH (a:Person)-[r:COMMUNICATES_WITH]-(b:Person) "
@@ -29,12 +29,13 @@ def get_full_graph():
 @app.get("/graph/{email}")
 def get_subgraph(email: str, depth: int = 1):
     """Return the subgraph around a person up to `depth` hops."""
+    depth = max(1, min(depth, 5))  # clamp between 1 and 5
     nodes = read_query(
-        "MATCH (origin:Person {email: $email})-[*1..$depth]-(connected:Person) "
+        f"MATCH (origin:Person {{email: $email}})-[*1..{depth}]-(connected:Person) "
         "WITH collect(DISTINCT connected) + collect(DISTINCT origin) AS people "
         "UNWIND people AS p "
-        "RETURN DISTINCT p.email AS email, p.name AS name",
-        {"email": email, "depth": depth},
+        "RETURN DISTINCT p.email AS email, p.name AS name, p.cluster AS cluster",
+        {"email": email},
     )
     if not nodes:
         raise HTTPException(status_code=404, detail="Person not found")
