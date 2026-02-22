@@ -10,3 +10,10 @@ openai==1.*
 pinecone-client==5.*
 sentence-transformers>=2.7.0
 torch
+rapidfireai
+langchain-pinecone
+langchain-huggingface
+langchain-core
+langchain-community
+langchain-text-splitters
+faiss-cpu

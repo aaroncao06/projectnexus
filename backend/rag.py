@@ -1,6 +1,6 @@
-"""RAG pipeline: retrieval from Pinecone + generation via OpenRouter."""
+"""RAG pipeline using RapidFire AI's RFLangChainRagSpec + OpenRouter."""
 
-from vectorstore import search
+from vectorstore import search, get_rag_spec
 from llm import complete
 from db import read_query
 
