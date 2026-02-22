@@ -7,11 +7,11 @@ scikit-learn>=1.0
 networkx>=3.0
 python-louvain>=0.0
 openai==1.*
-pinecone-client==5.*
+pinecone[asyncio]>=6,<8
 sentence-transformers>=2.7.0
 torch
 rapidfireai
-langchain-pinecone
+langchain-pinecone>=0.2.13
 langchain-huggingface
 langchain-core
 langchain-community
