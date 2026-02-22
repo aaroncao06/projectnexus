@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import GraphView from "./GraphView";
-import { fetchGraph, fetchMeta, summarizeEdge, type GraphData, type MetaData, type Edge } from "./api";
+import { fetchGraph, fetchMeta, summarizeEdge, fetchInsights, type GraphData, type MetaData, type Edge, type Insight } from "./api";
 
 const CLUSTER_COLORS = ["#6366f1", "#f97316", "#22c55e", "#ec4899", "#06b6d4", "#eab308", "#a855f7", "#ef4444", "#14b8a6", "#f59e0b"];
 
@@ -117,6 +117,11 @@ export default function App() {
   const [connectionsSearch, setConnectionsSearch] = useState("");
   const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
   const [minDegree, setMinDegree] = useState(1);
+  const [sidebarTab, setSidebarTab] = useState<"graph" | "insights">("graph");
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [insightFilters, setInsightFilters] = useState<Set<string>>(new Set(["node_anomaly", "bridge_edge", "high_centrality"]));
 
   const handleSummarizeEdge = async () => {
     if (!selectedEdge) return;
@@ -444,9 +449,45 @@ export default function App() {
     <div style={{ display: "flex", height: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "Inter, system-ui, sans-serif" }}>
       {/* Sidebar */}
       <aside style={{ width: 320, padding: 20, borderRight: "1px solid #1e293b", overflowY: "auto", flexShrink: 0 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>ProjectNexus</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>ProjectNexus</h1>
 
-        {meta && (
+        {/* Sidebar tabs */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+          <button
+            onClick={() => setSidebarTab("graph")}
+            style={{
+              flex: 1, padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: "pointer",
+              background: sidebarTab === "graph" ? "#6366f1" : "#1e293b",
+              color: sidebarTab === "graph" ? "#fff" : "#94a3b8",
+              border: `1px solid ${sidebarTab === "graph" ? "#6366f1" : "#334155"}`,
+            }}
+          >
+            Graph
+          </button>
+          <button
+            onClick={() => {
+              setSidebarTab("insights");
+              if (insights.length === 0 && !insightsLoading) {
+                setInsightsLoading(true);
+                setInsightsError(null);
+                fetchInsights()
+                  .then(data => setInsights(data.insights))
+                  .catch(() => setInsightsError("Failed to load insights. Is the backend running?"))
+                  .finally(() => setInsightsLoading(false));
+              }
+            }}
+            style={{
+              flex: 1, padding: "8px 0", fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: "pointer",
+              background: sidebarTab === "insights" ? "#6366f1" : "#1e293b",
+              color: sidebarTab === "insights" ? "#fff" : "#94a3b8",
+              border: `1px solid ${sidebarTab === "insights" ? "#6366f1" : "#334155"}`,
+            }}
+          >
+            Insights
+          </button>
+        </div>
+
+        {sidebarTab === "graph" && meta && (
           <div style={{ marginBottom: 20, fontSize: 13, color: "#94a3b8" }}>
             <p>{meta.counts.node_count} people &middot; {meta.counts.edge_count} connections</p>
             <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
@@ -486,479 +527,597 @@ export default function App() {
           </div>
         )}
 
-        {/* Expanded cluster info */}
-        {viewMode === "clusters" && expandedCluster != null && (
-          <div style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 13, color: "#94a3b8" }}>Viewing cluster:</p>
-            <p style={{ fontWeight: 600, color: CLUSTER_COLORS[expandedCluster % CLUSTER_COLORS.length] }}>
-              {clusterNameMap.get(expandedCluster) ?? `Cluster ${expandedCluster}`}
-            </p>
-            <button
-              onClick={() => setExpandedCluster(null)}
-              style={{ marginTop: 8, padding: "6px 12px", fontSize: 13, background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, cursor: "pointer" }}
-            >
-              ← Back to clusters
-            </button>
-          </div>
-        )}
-
-        {lastSelected && selectedNodes.size === 1 && (
-          <div style={{ marginBottom: 16 }}>
-            {lastSelected && (
-              <>
-                <p style={{ fontSize: 13, color: "#94a3b8" }}>Focused on:</p>
-                <p style={{ fontWeight: 600, color: "#f97316" }}>{lastSelected}</p>
-                {viewMode === "graph" && (
-                  <div style={{ marginTop: 8, display: "flex", gap: 4 }}>
-                    <button
-                      onClick={handleLoadSubgraph}
-                      style={{ flex: 1, padding: "6px 12px", fontSize: 13, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 6, cursor: "pointer" }}
-                    >
-                      View connections
-                    </button>
-                    <select
-                      value={subgraphDepth > maxSubgraphDepth ? 1 : subgraphDepth}
-                      onChange={(e) => setSubgraphDepth(parseInt(e.target.value))}
-                      style={{ padding: "6px 4px", fontSize: 13, background: "#1e293b", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 6, cursor: "pointer" }}
-                      title="Connection depth"
-                    >
-                      {Array.from({ length: Math.min(10, maxSubgraphDepth) }, (_, i) => i + 1).map(d => (
-                        <option key={d} value={d}>{d}º</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {selectedNodes.size > 0 && (
-                  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    <button
-                      onClick={handleHideSelected}
-                      style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-                    >
-                      Hide selected
-                    </button>
-                    <button
-                      onClick={handleShowSelected}
-                      style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-                    >
-                      Show selected
-                    </button>
-                    <button
-                      onClick={handleShowOnly}
-                      style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-                    >
-                      Show only
-                    </button>
-                  </div>
-                )}
-
-                {/* Neighbors List */}
-                {neighbors.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <button
-                      onClick={() => setShowConnectionsList(!showConnectionsList)}
-                      style={{
-                        width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-                        background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
-                        textAlign: "left"
-                      }}
-                    >
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Direct Connections ({neighbors.length})
-                      </span>
-                      <span style={{ fontSize: 10, color: "#64748b" }}>{showConnectionsList ? "▼" : "▶"}</span>
-                    </button>
-                    {showConnectionsList && <>
-                      <div style={{ marginBottom: 8 }}>
-                        <input
-                          type="text"
-                          placeholder="Search connections (Enter)..."
-                          value={connectionsSearch}
-                          onChange={(e) => setConnectionsSearch(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              setConnectionsSearchQuery(connectionsSearch);
-                            }
-                          }}
-                          style={{
-                            width: "100%",
-                            padding: "6px 10px",
-                            fontSize: 12,
-                            background: "#1e293b",
-                            border: "1px solid #334155",
-                            borderRadius: 6,
-                            color: "#f8fafc",
-                            outline: "none",
-                          }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {neighbors
-                          .filter(n => {
-                            if (!connectionsSearchQuery) return true;
-                            const q = connectionsSearchQuery.toLowerCase();
-                            return (n.name?.toLowerCase().includes(q) || n.email.toLowerCase().includes(q));
-                          })
-                          .map(n => {
-                            const isExpanded = selectedEdge && (
-                              (selectedEdge.source === lastSelected && selectedEdge.target === n.email) ||
-                              (selectedEdge.target === lastSelected && selectedEdge.source === n.email)
-                            );
-                            return (
-                              <div key={n.email} style={{ borderBottom: "1px solid #1e293b" }}>
-                                <button
-                                  onClick={() => {
-                                    if (isExpanded) {
-                                      setSelectedEdge(null);
-                                    } else {
-                                      // Find and show the edge details without changing node selection
-                                      const edge = graphData?.edges.find(
-                                        (e) =>
-                                          (e.source === lastSelected && e.target === n.email) ||
-                                          (e.source === n.email && e.target === lastSelected)
-                                      );
-                                      if (edge) {
-                                        setSelectedEdge(edge);
-                                        setShowComments(false);
-                                      }
-                                    }
-                                  }}
-                                  style={{
-                                    width: "100%", padding: "6px 0", textAlign: "left", background: "none", border: "none",
-                                    cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
-                                  }}
-                                >
-                                  <span style={{ fontSize: 13, color: isExpanded ? "#38bdf8" : "#cbd5e1", fontWeight: isExpanded ? 600 : 400 }}>
-                                    {n.name || n.email}
-                                  </span>
-                                  <span style={{ fontSize: 10, color: "#64748b" }}>{isExpanded ? "▼" : "▶"}</span>
-                                </button>
-                                {isExpanded && selectedEdge && (
-                                  <div style={{ padding: "8px 0 12px 12px", borderLeft: "2px solid #38bdf8", marginBottom: 8 }}>
-                                    {selectedEdge.properties.email_count != null && (
-                                      <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-                                        📧 <strong>{selectedEdge.properties.email_count}</strong> emails exchanged
-                                      </p>
-                                    )}
-                                    {selectedEdge.properties.summary ? (
-                                      <p style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10 }}>
-                                        {selectedEdge.properties.summary}
-                                      </p>
-                                    ) : (
-                                      <button
-                                        onClick={handleSummarizeEdge}
-                                        disabled={isSummarizingEdge}
-                                        style={{
-                                          width: "100%", padding: "8px", fontSize: 12,
-                                          background: "#334155", color: "#e2e8f0",
-                                          border: "1px solid #475569", borderRadius: 6,
-                                          cursor: isSummarizingEdge ? "wait" : "pointer",
-                                          marginBottom: 10
-                                        }}
-                                      >
-                                        {isSummarizingEdge ? "Generating..." : "Generate Summary"}
-                                      </button>
-                                    )}
-
-                                    {selectedEdge.properties.comments && (selectedEdge.properties.comments as string[]).length > 0 && (
-                                      <div style={{ marginTop: 8 }}>
-                                        <button
-                                          onClick={() => setShowComments(!showComments)}
-                                          style={{
-                                            display: "flex", alignItems: "center", gap: 6,
-                                            background: "none", border: "none", color: "#6366f1",
-                                            fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0,
-                                            marginBottom: 6
-                                          }}
-                                        >
-                                          {showComments ? "▼ Hide observations" : "▶ Show raw observations"}
-                                          <span style={{ fontSize: 10, color: "#64748b" }}>({(selectedEdge.properties.comments as string[]).length})</span>
-                                        </button>
-                                        {showComments && (
-                                          <ul style={{
-                                            margin: 0, paddingLeft: 16, fontSize: 11, color: "#94a3b8",
-                                            display: "flex", flexDirection: "column", gap: 6,
-                                            maxHeight: 200, overflowY: "auto"
-                                          }}>
-                                            {(selectedEdge.properties.comments as string[]).map((c, i) => (
-                                              <li key={i} style={{ lineHeight: 1.4 }}>{c}</li>
-                                            ))}
-                                          </ul>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </>}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Multi-select actions (shown when 2+ nodes are selected) */}
-        {selectedNodes.size > 1 && (
-          <div style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 13, color: "#94a3b8" }}>{selectedNodes.size} nodes selected</p>
-            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {sidebarTab === "graph" && <>
+          {/* Expanded cluster info */}
+          {viewMode === "clusters" && expandedCluster != null && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>Viewing cluster:</p>
+              <p style={{ fontWeight: 600, color: CLUSTER_COLORS[expandedCluster % CLUSTER_COLORS.length] }}>
+                {clusterNameMap.get(expandedCluster) ?? `Cluster ${expandedCluster}`}
+              </p>
               <button
-                onClick={handleHideSelected}
-                style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                onClick={() => setExpandedCluster(null)}
+                style={{ marginTop: 8, padding: "6px 12px", fontSize: 13, background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, cursor: "pointer" }}
               >
-                Hide selected
-              </button>
-              <button
-                onClick={handleShowSelected}
-                style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-              >
-                Show selected
-              </button>
-              <button
-                onClick={handleShowOnly}
-                style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-              >
-                Show only
+                ← Back to clusters
               </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Standalone relationship panel (shown when a link is clicked with multiple nodes selected) */}
-        {selectedEdge && selectedNodes.size !== 1 && (() => {
-          const srcName = graphData?.nodes.find(n => n.email === selectedEdge.source)?.name ?? selectedEdge.source;
-          const tgtName = graphData?.nodes.find(n => n.email === selectedEdge.target)?.name ?? selectedEdge.target;
-          return (
-            <div style={{ marginBottom: 16, padding: 12, background: "#1e293b", borderRadius: 8, border: "1px solid #334155" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: "#38bdf8" }}>Relationship</h3>
-                <button
-                  onClick={() => setSelectedEdge(null)}
-                  style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16, padding: 0 }}
-                >
-                  ✕
-                </button>
-              </div>
-              <p style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600, marginBottom: 4, textAlign: "center" }}>{srcName}</p>
-              <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textAlign: "center" }}>↕</p>
-              <p style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{tgtName}</p>
-              {selectedEdge.properties.email_count != null && (
-                <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-                  📧 <strong>{selectedEdge.properties.email_count}</strong> emails exchanged
-                </p>
-              )}
-              {selectedEdge.properties.summary ? (
-                <p style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10 }}>
-                  {selectedEdge.properties.summary}
-                </p>
-              ) : (
-                <button
-                  onClick={handleSummarizeEdge}
-                  disabled={isSummarizingEdge}
-                  style={{
-                    width: "100%", padding: "8px", fontSize: 12,
-                    background: "#334155", color: "#e2e8f0",
-                    border: "1px solid #475569", borderRadius: 6,
-                    cursor: isSummarizingEdge ? "wait" : "pointer",
-                    marginBottom: 10
-                  }}
-                >
-                  {isSummarizingEdge ? "Generating..." : "Generate Summary"}
-                </button>
-              )}
-              {selectedEdge.properties.comments && (selectedEdge.properties.comments as string[]).length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <button
-                    onClick={() => setShowComments(!showComments)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      background: "none", border: "none", color: "#6366f1",
-                      fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0,
-                      marginBottom: 6
-                    }}
-                  >
-                    {showComments ? "▼ Hide observations" : "▶ Show raw observations"}
-                    <span style={{ fontSize: 10, color: "#64748b" }}>({(selectedEdge.properties.comments as string[]).length})</span>
-                  </button>
-                  {showComments && (
-                    <ul style={{
-                      margin: 0, paddingLeft: 16, fontSize: 11, color: "#94a3b8",
-                      display: "flex", flexDirection: "column", gap: 6,
-                      maxHeight: 200, overflowY: "auto"
-                    }}>
-                      {(selectedEdge.properties.comments as string[]).map((c, i) => (
-                        <li key={i} style={{ lineHeight: 1.4 }}>{c}</li>
-                      ))}
-                    </ul>
+          {lastSelected && selectedNodes.size === 1 && (
+            <div style={{ marginBottom: 16 }}>
+              {lastSelected && (
+                <>
+                  <p style={{ fontSize: 13, color: "#94a3b8" }}>Focused on:</p>
+                  <p style={{ fontWeight: 600, color: "#f97316" }}>{lastSelected}</p>
+                  {viewMode === "graph" && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 4 }}>
+                      <button
+                        onClick={handleLoadSubgraph}
+                        style={{ flex: 1, padding: "6px 12px", fontSize: 13, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 6, cursor: "pointer" }}
+                      >
+                        View connections
+                      </button>
+                      <select
+                        value={subgraphDepth > maxSubgraphDepth ? 1 : subgraphDepth}
+                        onChange={(e) => setSubgraphDepth(parseInt(e.target.value))}
+                        style={{ padding: "6px 4px", fontSize: 13, background: "#1e293b", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 6, cursor: "pointer" }}
+                        title="Connection depth"
+                      >
+                        {Array.from({ length: Math.min(10, maxSubgraphDepth) }, (_, i) => i + 1).map(d => (
+                          <option key={d} value={d}>{d}º</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+                  {selectedNodes.size > 0 && (
+                    <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button
+                        onClick={handleHideSelected}
+                        style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        Hide selected
+                      </button>
+                      <button
+                        onClick={handleShowSelected}
+                        style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        Show selected
+                      </button>
+                      <button
+                        onClick={handleShowOnly}
+                        style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        Show only
+                      </button>
+                    </div>
+                  )}
 
-        {/* Cluster legend */}
-        {!expandedCluster && clusterInfo.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <button
-              onClick={() => setShowClustersList(!showClustersList)}
-              style={{
-                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-                background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
-                textAlign: "left"
-              }}
-            >
-              <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>Clusters</h3>
-              <span style={{ fontSize: 10, color: "#64748b" }}>{showClustersList ? "▼" : "▶"}</span>
-            </button>
-
-            {showClustersList && clusterInfo.map(([id, names]) => (
-              <div
-                key={id}
-                onClick={() => handleClusterClick(id)}
-                style={{ marginBottom: 6, fontSize: 12, cursor: "pointer" }}
-              >
-                <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: CLUSTER_COLORS[id % CLUSTER_COLORS.length], marginRight: 6, verticalAlign: "middle" }} />
-                <span style={{ color: expandedCluster === id ? CLUSTER_COLORS[id % CLUSTER_COLORS.length] : "#cbd5e1" }}>
-                  {clusterNameMap.get(id) ?? `Cluster ${id}`}
-                </span>
-                <span style={{ color: "#64748b" }}> ({names.length})</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {meta && (
-          <div>
-            <button
-              onClick={() => setShowDegreesList(!showDegreesList)}
-              style={{
-                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-                background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
-                textAlign: "left"
-              }}
-            >
-              <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>People</h3>
-              <span style={{ fontSize: 10, color: "#64748b" }}>{showDegreesList ? "▼" : "▶"}</span>
-            </button>
-
-            {showDegreesList && (
-              <div style={{ marginBottom: 12, padding: "0 4px", display: "flex", alignItems: "center", gap: 8 }}>
-                <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
-                <select
-                  value={minDegree}
-                  onChange={(e) => {
-                    setMinDegree(parseInt(e.target.value, 10));
-                    setLayoutSignal(s => s + 1);
-                  }}
-                  style={{
-                    width: 50,
-                    padding: "2px 4px",
-                    fontSize: 11,
-                    background: "#1e293b",
-                    color: "#f8fafc",
-                    border: "1px solid #334155",
-                    borderRadius: 4,
-                    outline: "none",
-                    cursor: "pointer"
-                  }}
-                >
-                  {Array.from(new Set(meta.degrees.map(d => d.degree)))
-                    .sort((a, b) => a - b)
-                    .map(deg => (
-                      <option key={deg} value={deg}>{deg}</option>
-                    ))}
-                </select>
-              </div>
-            )}
-
-            {showDegreesList && (
-              <>
-                <div style={{ marginBottom: 12 }}>
-                  <input
-                    type="text"
-                    placeholder="Search people (Enter)..."
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        setSearchQuery(searchInput);
-                      }
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "6px 10px",
-                      fontSize: 12,
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      borderRadius: 6,
-                      color: "#f8fafc",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                  <button
-                    onClick={handleShowEverything}
-                    style={{ flex: 1, padding: "4px 0", fontSize: 11, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 4, cursor: "pointer" }}
-                  >
-                    Show all
-                  </button>
-                  <button
-                    onClick={handleHideEverything}
-                    style={{ flex: 1, padding: "4px 0", fontSize: 11, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 4, cursor: "pointer" }}
-                  >
-                    Hide all
-                  </button>
-                </div>
-                <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 13 }}>
-                  {[...meta.degrees]
-                    .filter(d => {
-                      if (d.degree < minDegree) return false;
-                      if (!searchQuery) return true;
-                      const q = searchQuery.toLowerCase();
-                      return (d.name?.toLowerCase().includes(q) || d.email.toLowerCase().includes(q));
-                    })
-                    .sort((a, b) => {
-                      const aSelected = selectedNodes.has(a.email);
-                      const bSelected = selectedNodes.has(b.email);
-                      if (aSelected && !bSelected) return -1;
-                      if (!aSelected && bSelected) return 1;
-                      return 0;
-                    })
-                    .map((d) => (
-                      <li
-                        key={d.email}
+                  {/* Neighbors List */}
+                  {neighbors.length > 0 && (
+                    <div style={{ marginTop: 16 }}>
+                      <button
+                        onClick={() => setShowConnectionsList(!showConnectionsList)}
                         style={{
-                          padding: "4px 0",
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 8,
-                          color: selectedNodes.has(d.email) ? "#f97316" : (hiddenNodes.has(d.email) ? "#475569" : "#cbd5e1")
+                          width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                          background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
+                          textAlign: "left"
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={!hiddenNodes.has(d.email)}
-                          onChange={() => handleToggleVisibility(d.email)}
-                          style={{ marginTop: 4, cursor: "pointer" }}
-                        />
-                        <div
-                          onClick={() => handleNodeClick(d.email, false)}
-                          style={{ cursor: "pointer", flex: 1 }}
-                        >
-                          <span style={{ fontWeight: 500 }}>{d.name || d.email}</span>
-                          {d.name && d.email && (
-                            <span style={{ fontSize: 11, color: "#64748b", display: "block", marginTop: 1 }}>{d.email}</span>
-                          )}
-                          <span style={{ color: "#64748b" }}> ({d.degree})</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Direct Connections ({neighbors.length})
+                        </span>
+                        <span style={{ fontSize: 10, color: "#64748b" }}>{showConnectionsList ? "▼" : "▶"}</span>
+                      </button>
+                      {showConnectionsList && <>
+                        <div style={{ marginBottom: 8 }}>
+                          <input
+                            type="text"
+                            placeholder="Search connections (Enter)..."
+                            value={connectionsSearch}
+                            onChange={(e) => setConnectionsSearch(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                setConnectionsSearchQuery(connectionsSearch);
+                              }
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "6px 10px",
+                              fontSize: 12,
+                              background: "#1e293b",
+                              border: "1px solid #334155",
+                              borderRadius: 6,
+                              color: "#f8fafc",
+                              outline: "none",
+                            }}
+                          />
                         </div>
-                      </li>
-                    ))}
-                </ul>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {neighbors
+                            .filter(n => {
+                              if (!connectionsSearchQuery) return true;
+                              const q = connectionsSearchQuery.toLowerCase();
+                              return (n.name?.toLowerCase().includes(q) || n.email.toLowerCase().includes(q));
+                            })
+                            .map(n => {
+                              const isExpanded = selectedEdge && (
+                                (selectedEdge.source === lastSelected && selectedEdge.target === n.email) ||
+                                (selectedEdge.target === lastSelected && selectedEdge.source === n.email)
+                              );
+                              return (
+                                <div key={n.email} style={{ borderBottom: "1px solid #1e293b" }}>
+                                  <button
+                                    onClick={() => {
+                                      if (isExpanded) {
+                                        setSelectedEdge(null);
+                                      } else {
+                                        // Find and show the edge details without changing node selection
+                                        const edge = graphData?.edges.find(
+                                          (e) =>
+                                            (e.source === lastSelected && e.target === n.email) ||
+                                            (e.source === n.email && e.target === lastSelected)
+                                        );
+                                        if (edge) {
+                                          setSelectedEdge(edge);
+                                          setShowComments(false);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      width: "100%", padding: "6px 0", textAlign: "left", background: "none", border: "none",
+                                      cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 13, color: isExpanded ? "#38bdf8" : "#cbd5e1", fontWeight: isExpanded ? 600 : 400 }}>
+                                      {n.name || n.email}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: "#64748b" }}>{isExpanded ? "▼" : "▶"}</span>
+                                  </button>
+                                  {isExpanded && selectedEdge && (
+                                    <div style={{ padding: "8px 0 12px 12px", borderLeft: "2px solid #38bdf8", marginBottom: 8 }}>
+                                      {selectedEdge.properties.email_count != null && (
+                                        <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+                                          📧 <strong>{selectedEdge.properties.email_count}</strong> emails exchanged
+                                        </p>
+                                      )}
+                                      {selectedEdge.properties.summary ? (
+                                        <p style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10 }}>
+                                          {selectedEdge.properties.summary}
+                                        </p>
+                                      ) : (
+                                        <button
+                                          onClick={handleSummarizeEdge}
+                                          disabled={isSummarizingEdge}
+                                          style={{
+                                            width: "100%", padding: "8px", fontSize: 12,
+                                            background: "#334155", color: "#e2e8f0",
+                                            border: "1px solid #475569", borderRadius: 6,
+                                            cursor: isSummarizingEdge ? "wait" : "pointer",
+                                            marginBottom: 10
+                                          }}
+                                        >
+                                          {isSummarizingEdge ? "Generating..." : "Generate Summary"}
+                                        </button>
+                                      )}
+
+                                      {selectedEdge.properties.comments && (selectedEdge.properties.comments as string[]).length > 0 && (
+                                        <div style={{ marginTop: 8 }}>
+                                          <button
+                                            onClick={() => setShowComments(!showComments)}
+                                            style={{
+                                              display: "flex", alignItems: "center", gap: 6,
+                                              background: "none", border: "none", color: "#6366f1",
+                                              fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0,
+                                              marginBottom: 6
+                                            }}
+                                          >
+                                            {showComments ? "▼ Hide observations" : "▶ Show raw observations"}
+                                            <span style={{ fontSize: 10, color: "#64748b" }}>({(selectedEdge.properties.comments as string[]).length})</span>
+                                          </button>
+                                          {showComments && (
+                                            <ul style={{
+                                              margin: 0, paddingLeft: 16, fontSize: 11, color: "#94a3b8",
+                                              display: "flex", flexDirection: "column", gap: 6,
+                                              maxHeight: 200, overflowY: "auto"
+                                            }}>
+                                              {(selectedEdge.properties.comments as string[]).map((c, i) => (
+                                                <li key={i} style={{ lineHeight: 1.4 }}>{c}</li>
+                                              ))}
+                                            </ul>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </>}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Multi-select actions (shown when 2+ nodes are selected) */}
+          {selectedNodes.size > 1 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 13, color: "#94a3b8" }}>{selectedNodes.size} nodes selected</p>
+              <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <button
+                  onClick={handleHideSelected}
+                  style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Hide selected
+                </button>
+                <button
+                  onClick={handleShowSelected}
+                  style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Show selected
+                </button>
+                <button
+                  onClick={handleShowOnly}
+                  style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Show only
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Standalone relationship panel (shown when a link is clicked with multiple nodes selected) */}
+          {selectedEdge && selectedNodes.size !== 1 && (() => {
+            const srcName = graphData?.nodes.find(n => n.email === selectedEdge.source)?.name ?? selectedEdge.source;
+            const tgtName = graphData?.nodes.find(n => n.email === selectedEdge.target)?.name ?? selectedEdge.target;
+            return (
+              <div style={{ marginBottom: 16, padding: 12, background: "#1e293b", borderRadius: 8, border: "1px solid #334155" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 600, color: "#38bdf8" }}>Relationship</h3>
+                  <button
+                    onClick={() => setSelectedEdge(null)}
+                    style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16, padding: 0 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600, marginBottom: 4, textAlign: "center" }}>{srcName}</p>
+                <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textAlign: "center" }}>↕</p>
+                <p style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{tgtName}</p>
+                {selectedEdge.properties.email_count != null && (
+                  <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+                    📧 <strong>{selectedEdge.properties.email_count}</strong> emails exchanged
+                  </p>
+                )}
+                {selectedEdge.properties.summary ? (
+                  <p style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10 }}>
+                    {selectedEdge.properties.summary}
+                  </p>
+                ) : (
+                  <button
+                    onClick={handleSummarizeEdge}
+                    disabled={isSummarizingEdge}
+                    style={{
+                      width: "100%", padding: "8px", fontSize: 12,
+                      background: "#334155", color: "#e2e8f0",
+                      border: "1px solid #475569", borderRadius: 6,
+                      cursor: isSummarizingEdge ? "wait" : "pointer",
+                      marginBottom: 10
+                    }}
+                  >
+                    {isSummarizingEdge ? "Generating..." : "Generate Summary"}
+                  </button>
+                )}
+                {selectedEdge.properties.comments && (selectedEdge.properties.comments as string[]).length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      onClick={() => setShowComments(!showComments)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        background: "none", border: "none", color: "#6366f1",
+                        fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0,
+                        marginBottom: 6
+                      }}
+                    >
+                      {showComments ? "▼ Hide observations" : "▶ Show raw observations"}
+                      <span style={{ fontSize: 10, color: "#64748b" }}>({(selectedEdge.properties.comments as string[]).length})</span>
+                    </button>
+                    {showComments && (
+                      <ul style={{
+                        margin: 0, paddingLeft: 16, fontSize: 11, color: "#94a3b8",
+                        display: "flex", flexDirection: "column", gap: 6,
+                        maxHeight: 200, overflowY: "auto"
+                      }}>
+                        {(selectedEdge.properties.comments as string[]).map((c, i) => (
+                          <li key={i} style={{ lineHeight: 1.4 }}>{c}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Cluster legend */}
+          {!expandedCluster && clusterInfo.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <button
+                onClick={() => setShowClustersList(!showClustersList)}
+                style={{
+                  width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
+                  textAlign: "left"
+                }}
+              >
+                <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>Clusters</h3>
+                <span style={{ fontSize: 10, color: "#64748b" }}>{showClustersList ? "▼" : "▶"}</span>
+              </button>
+
+              {showClustersList && clusterInfo.map(([id, names]) => (
+                <div
+                  key={id}
+                  onClick={() => handleClusterClick(id)}
+                  style={{ marginBottom: 6, fontSize: 12, cursor: "pointer" }}
+                >
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: CLUSTER_COLORS[id % CLUSTER_COLORS.length], marginRight: 6, verticalAlign: "middle" }} />
+                  <span style={{ color: expandedCluster === id ? CLUSTER_COLORS[id % CLUSTER_COLORS.length] : "#cbd5e1" }}>
+                    {clusterNameMap.get(id) ?? `Cluster ${id}`}
+                  </span>
+                  <span style={{ color: "#64748b" }}> ({names.length})</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {meta && (
+            <div>
+              <button
+                onClick={() => setShowDegreesList(!showDegreesList)}
+                style={{
+                  width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
+                  textAlign: "left"
+                }}
+              >
+                <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>People</h3>
+                <span style={{ fontSize: 10, color: "#64748b" }}>{showDegreesList ? "▼" : "▶"}</span>
+              </button>
+
+              {showDegreesList && (
+                <div style={{ marginBottom: 12, padding: "0 4px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
+                  <select
+                    value={minDegree}
+                    onChange={(e) => {
+                      setMinDegree(parseInt(e.target.value, 10));
+                      setLayoutSignal(s => s + 1);
+                    }}
+                    style={{
+                      width: 50,
+                      padding: "2px 4px",
+                      fontSize: 11,
+                      background: "#1e293b",
+                      color: "#f8fafc",
+                      border: "1px solid #334155",
+                      borderRadius: 4,
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {Array.from(new Set(meta.degrees.map(d => d.degree)))
+                      .sort((a, b) => a - b)
+                      .map(deg => (
+                        <option key={deg} value={deg}>{deg}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {showDegreesList && (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <input
+                      type="text"
+                      placeholder="Search people (Enter)..."
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          setSearchQuery(searchInput);
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        background: "#1e293b",
+                        border: "1px solid #334155",
+                        borderRadius: 6,
+                        color: "#f8fafc",
+                        outline: "none",
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button
+                      onClick={handleShowEverything}
+                      style={{ flex: 1, padding: "4px 0", fontSize: 11, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 4, cursor: "pointer" }}
+                    >
+                      Show all
+                    </button>
+                    <button
+                      onClick={handleHideEverything}
+                      style={{ flex: 1, padding: "4px 0", fontSize: 11, background: "#334155", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 4, cursor: "pointer" }}
+                    >
+                      Hide all
+                    </button>
+                  </div>
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 13 }}>
+                    {[...meta.degrees]
+                      .filter(d => {
+                        if (d.degree < minDegree) return false;
+                        if (!searchQuery) return true;
+                        const q = searchQuery.toLowerCase();
+                        return (d.name?.toLowerCase().includes(q) || d.email.toLowerCase().includes(q));
+                      })
+                      .sort((a, b) => {
+                        const aSelected = selectedNodes.has(a.email);
+                        const bSelected = selectedNodes.has(b.email);
+                        if (aSelected && !bSelected) return -1;
+                        if (!aSelected && bSelected) return 1;
+                        return 0;
+                      })
+                      .map((d) => (
+                        <li
+                          key={d.email}
+                          style={{
+                            padding: "4px 0",
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            color: selectedNodes.has(d.email) ? "#f97316" : (hiddenNodes.has(d.email) ? "#475569" : "#cbd5e1")
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!hiddenNodes.has(d.email)}
+                            onChange={() => handleToggleVisibility(d.email)}
+                            style={{ marginTop: 4, cursor: "pointer" }}
+                          />
+                          <div
+                            onClick={() => handleNodeClick(d.email, false)}
+                            style={{ cursor: "pointer", flex: 1 }}
+                          >
+                            <span style={{ fontWeight: 500 }}>{d.name || d.email}</span>
+                            {d.name && d.email && (
+                              <span style={{ fontSize: 11, color: "#64748b", display: "block", marginTop: 1 }}>{d.email}</span>
+                            )}
+                            <span style={{ color: "#64748b" }}> ({d.degree})</span>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </>}
+
+        {/* Insights Tab */}
+        {sidebarTab === "insights" && (
+          <div>
+            {insightsLoading && (
+              <p style={{ fontSize: 13, color: "#94a3b8", padding: "20px 0", textAlign: "center" }}>Analyzing graph...</p>
+            )}
+            {insightsError && (
+              <p style={{ fontSize: 13, color: "#ef4444", padding: "8px 0" }}>{insightsError}</p>
+            )}
+            {!insightsLoading && !insightsError && insights.length === 0 && (
+              <p style={{ fontSize: 13, color: "#64748b", padding: "20px 0", textAlign: "center" }}>No insights yet. Click the tab to analyze.</p>
+            )}
+            {insights.length > 0 && (
+              <>
+                {/* Filter toggles */}
+                <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+                  {([
+                    { key: "node_anomaly", label: "Anomalies", color: "#f97316" },
+                    { key: "bridge_edge", label: "Bridges", color: "#06b6d4" },
+                    { key: "high_centrality", label: "Key Players", color: "#a855f7" },
+                  ] as const).map(f => {
+                    const active = insightFilters.has(f.key);
+                    return (
+                      <button
+                        key={f.key}
+                        onClick={() => setInsightFilters(prev => {
+                          const next = new Set(prev);
+                          if (next.has(f.key)) next.delete(f.key);
+                          else next.add(f.key);
+                          return next;
+                        })}
+                        style={{
+                          padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: "pointer",
+                          background: active ? f.color + "22" : "#1e293b",
+                          color: active ? f.color : "#64748b",
+                          border: `1px solid ${active ? f.color : "#334155"}`,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>
+                  {insights.filter(i => insightFilters.has(i.type)).length} of {insights.length} insights shown
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {insights.filter(i => insightFilters.has(i.type)).map((insight, i) => {
+                    const typeColors: Record<string, string> = {
+                      node_anomaly: "#f97316",
+                      bridge_edge: "#06b6d4",
+                      high_centrality: "#a855f7",
+                    };
+                    const typeLabels: Record<string, string> = {
+                      node_anomaly: "ANOMALY",
+                      bridge_edge: "BRIDGE",
+                      high_centrality: "KEY PLAYER",
+                    };
+                    const color = typeColors[insight.type] || "#94a3b8";
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          if (insight.nodes.length > 0) {
+                            setSelectedNodes(new Set(insight.nodes));
+                            setLastSelected(insight.nodes[0]);
+                            if (insight.edges.length > 0) {
+                              const e = insight.edges[0];
+                              const edge = graphData?.edges.find(
+                                ge => (ge.source === e.source && ge.target === e.target) ||
+                                  (ge.source === e.target && ge.target === e.source)
+                              );
+                              setSelectedEdge(edge || null);
+                            } else {
+                              setSelectedEdge(null);
+                            }
+                            setSidebarTab("graph");
+                          }
+                        }}
+                        style={{
+                          textAlign: "left", background: "#1e293b", border: "1px solid #334155",
+                          borderRadius: 8, padding: "10px 12px", cursor: "pointer",
+                          borderLeft: `3px solid ${color}`,
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "#334155")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "#1e293b")}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.05em" }}>
+                            {typeLabels[insight.type] || insight.type}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
+                            background: insight.severity >= 0.7 ? "#7f1d1d" : insight.severity >= 0.4 ? "#78350f" : "#1e293b",
+                            color: insight.severity >= 0.7 ? "#fca5a5" : insight.severity >= 0.4 ? "#fde68a" : "#94a3b8",
+                          }}>
+                            {(insight.severity * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", margin: 0, marginBottom: 2 }}>
+                          {insight.title}
+                        </p>
+                        <p style={{ fontSize: 11, color: "#94a3b8", margin: 0, lineHeight: 1.4 }}>
+                          {insight.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </>
             )}
           </div>
@@ -981,7 +1140,7 @@ export default function App() {
             onNodesSelect={handleNodesSelect}
             onLinkClick={handleLinkClick}
             onBackgroundClick={handleBackgroundClick}
-            width={window.innerWidth - 280}
+            width={window.innerWidth - 320}
             height={window.innerHeight}
             showClusters={viewMode === "clusters"}
             resetLayoutSignal={layoutSignal}
