@@ -69,3 +69,18 @@ export async function summarizeEdge(source: string, target: string): Promise<{ s
   }
   return res.json();
 }
+
+export interface Insight {
+  type: "node_anomaly" | "bridge_edge" | "high_centrality";
+  title: string;
+  description: string;
+  severity: number;
+  nodes: string[];
+  edges: { source: string; target: string }[];
+}
+
+export async function fetchInsights(): Promise<{ insights: Insight[] }> {
+  const res = await fetch(`${API_BASE}/insights`);
+  if (!res.ok) throw new Error("Failed to fetch insights");
+  return res.json();
+}

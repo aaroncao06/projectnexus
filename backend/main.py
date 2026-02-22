@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from db import read_query, get_driver, write_query
 from clustering import ensure_clustered
+from insights import compute_insights, invalidate_cache as invalidate_insights
 from openai import OpenAI
 from config import OPENROUTER_API_KEY, OPENROUTER_MODEL
 from pydantic import BaseModel
@@ -21,6 +22,8 @@ app.add_middleware(
 def get_full_graph(request: Request):
     """Return all nodes and relationships. Auto-runs clustering if any node has no cluster (use ?recluster=1 to force)."""
     force = request.query_params.get("recluster") == "1"
+    if force:
+        invalidate_insights()
     ensure_clustered(get_driver(), force=force)
     nodes = read_query(
         "MATCH (p:Person) WHERE (p)-[:COMMUNICATES_WITH]-() "
@@ -128,3 +131,11 @@ def summarize_edge(req: SummarizeRequest):
     )
  
     return {"summary": summary}
+
+
+@app.get("/insights")
+def get_insights():
+    """Return anomaly detection and graph analysis insights."""
+    driver = get_driver()
+    ensure_clustered(driver)  # make sure clusters exist first
+    return {"insights": compute_insights(driver)}
