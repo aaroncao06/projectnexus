@@ -11,7 +11,6 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
-import ipdb
 import itertools
 
 from openai import OpenAI

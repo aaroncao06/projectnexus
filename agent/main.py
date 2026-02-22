@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import ipdb
 from tqdm import tqdm
 
 from agent import run_agent, run_agent_from_chain_text, summarize_edges
@@ -111,7 +110,6 @@ def main():
             chain_text = (row[chain_column] or "").strip()
             participants = ast.literal_eval(row[participants_column] or "[]")
             people = ast.literal_eval(row[people_column] or "[]")
-            # ipdb.set_trace()
             if not chain_text:
                 print('empty chain text')
                 continue
