@@ -99,8 +99,10 @@ def get_retriever(
 def get_rag_spec(
     namespaces: list[str] | None = None,
     top_k: int | None = None,
-) -> RFLangChainRagSpec:
-    """Return an RFLangChainRagSpec backed by the multi-namespace retriever."""
+):
+    """Return an RFLangChainRagSpec backed by the multi-namespace retriever. Requires rapidfireai."""
+    from rapidfireai.automl import RFLangChainRagSpec
+
     retriever = get_retriever(namespaces=namespaces, top_k=top_k)
     return RFLangChainRagSpec(
         document_loader=_NoOpLoader(),

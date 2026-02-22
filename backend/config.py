@@ -21,6 +21,6 @@ DEFAULT_NAMESPACES = [
     ns.strip()
     for ns in os.getenv(
         "RAG_NAMESPACES",
-        "emails,relationships,email_chains,epstein_emails,enron_filtered",
+        "epstein_emails",
     ).split(",")
 ]

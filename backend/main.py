@@ -153,15 +153,39 @@ def get_insights():
     return {"insights": compute_insights(driver)}
 
 
+def _handle_pinecone_error(e: Exception) -> None:
+    """Raise HTTPException with a clear message for Pinecone index-not-found."""
+    if "NotFound" in type(e).__name__ or "not found" in str(e).lower():
+        from config import PINECONE_INDEX_NAME
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Pinecone index '{PINECONE_INDEX_NAME}' not found. "
+                "Create it in the Pinecone console (dimension 384, cosine metric) or run the agent index scripts first."
+            ),
+        )
+    raise
+
+
 @app.post("/query")
 def post_query(req: QueryRequest):
     """RAG query: embed question, search Pinecone, generate answer via OpenRouter."""
-    result = rag_query(req.question, model=req.model, namespaces=req.namespaces)
-    return result
+    try:
+        result = rag_query(req.question, model=req.model, namespaces=req.namespaces)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_pinecone_error(e)
 
 
 @app.post("/insights")
 def post_insights(req: InsightsRequest):
     """Generate overall graph insights using the LLM."""
-    result = generate_graph_insights(model=req.model)
-    return result
+    try:
+        result = generate_graph_insights(model=req.model)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_pinecone_error(e)
