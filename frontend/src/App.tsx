@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import GraphView from "./GraphView";
-import { fetchGraph, fetchMeta, summarizeEdge, fetchInsights, type GraphData, type MetaData, type Edge, type Insight } from "./api";
+import ChatPanel from "./ChatPanel";
+import { fetchGraph, fetchMeta, summarizeEdge, queryRag, fetchInsights, type GraphData, type MetaData, type Edge, type Insight } from "./api";
+import type { ChatMessage } from "./ChatPanel";
 
 const CLUSTER_COLORS = ["#6366f1", "#f97316", "#22c55e", "#ec4899", "#06b6d4", "#eab308", "#a855f7", "#ef4444", "#14b8a6", "#f59e0b"];
 
@@ -122,6 +124,10 @@ export default function App() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState<string | null>(null);
   const [insightFilters, setInsightFilters] = useState<Set<string>>(new Set(["node_anomaly", "bridge_edge", "high_centrality"]));
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   const handleSummarizeEdge = async () => {
     if (!selectedEdge) return;
@@ -430,6 +436,27 @@ export default function App() {
     setExpandedCluster(null);
     setBoxSelectMode(false);
     if (fullGraphData) setGraphData(fullGraphData);
+  };
+
+  const handleChatSend = async (question: string) => {
+    setChatError(null);
+    setChatMessages((prev) => [...prev, { role: "user", content: question }]);
+    setChatLoading(true);
+    try {
+      const result = await queryRag(question);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: result.answer, sources: result.sources },
+      ]);
+    } catch (e) {
+      setChatError(e instanceof Error ? e.message : "Query failed");
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Sorry, something went wrong. Try again." },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   const clusterNameMap = useMemo(() => graphData ? getClusterNameMap(graphData.nodes) : new Map<number, string>(), [graphData]);
@@ -1150,6 +1177,38 @@ export default function App() {
           !error && <p style={{ padding: 40 }}>Loading graph...</p>
         )}
       </main>
+
+      {/* Chat toggle: fixed on the right so left sidebar stays open */}
+      <button
+        onClick={() => setShowChat((open) => !open)}
+        style={{
+          position: "fixed",
+          right: showChat ? 380 + 16 : 20,
+          top: 20,
+          zIndex: 20,
+          padding: "10px 16px",
+          fontSize: 14,
+          fontWeight: 600,
+          background: showChat ? "#6366f1" : "#334155",
+          color: showChat ? "#fff" : "#e2e8f0",
+          border: `1px solid ${showChat ? "#6366f1" : "#475569"}`,
+          borderRadius: 8,
+          cursor: "pointer",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        }}
+      >
+        Chat (RAG)
+      </button>
+
+      {showChat && (
+        <ChatPanel
+          messages={chatMessages}
+          onSend={handleChatSend}
+          onClose={() => setShowChat(false)}
+          loading={chatLoading}
+          error={chatError}
+        />
+      )}
     </div>
   );
 }

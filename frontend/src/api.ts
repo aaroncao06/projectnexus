@@ -40,6 +40,39 @@ export interface MetaData {
   degrees: Degree[];
 }
 
+export interface RagSource {
+  namespace?: string;
+  score?: number;
+  type?: string;
+  text_preview?: string;
+}
+
+export interface RagQueryResult {
+  answer: string;
+  sources: RagSource[];
+  model: string;
+}
+
+export async function queryRag(
+  question: string,
+  options?: { model?: string; namespaces?: string[] }
+): Promise<RagQueryResult> {
+  const res = await fetch(`${API_BASE}/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      model: options?.model ?? undefined,
+      namespaces: options?.namespaces ?? undefined,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err.detail as string) || "RAG query failed");
+  }
+  return res.json();
+}
+
 export async function fetchGraph(recluster = false): Promise<GraphData> {
   const url = recluster ? `${API_BASE}/graph?recluster=1` : `${API_BASE}/graph`;
   const res = await fetch(url);

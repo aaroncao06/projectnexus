@@ -2,3 +2,8 @@ neo4j==5.*
 openai==1.*
 python-dotenv==1.*
 tqdm==4.*
+pinecone-client==5.*
+sentence-transformers>=2.7.0
+torch
+pandas
+pyarrow
