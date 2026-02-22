@@ -443,7 +443,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", height: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "Inter, system-ui, sans-serif" }}>
       {/* Sidebar */}
-      <aside style={{ width: 280, padding: 20, borderRight: "1px solid #1e293b", overflowY: "auto", flexShrink: 0 }}>
+      <aside style={{ width: 320, padding: 20, borderRight: "1px solid #1e293b", overflowY: "auto", flexShrink: 0 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>ProjectNexus</h1>
 
         {meta && (
@@ -722,12 +722,6 @@ export default function App() {
                 style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
               >
                 Show only
-              </button>
-              <button
-                onClick={handleShowEverything}
-                style={{ padding: "4px 8px", fontSize: 11, background: "#475569", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-              >
-                Show everything
               </button>
             </div>
           </div>
