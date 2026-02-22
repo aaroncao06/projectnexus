@@ -19,7 +19,8 @@ def get_full_graph():
         "MATCH (p:Person) RETURN p.email AS email, p.name AS name"
     )
     edges = read_query(
-        "MATCH (a:Person)-[r:COMMUNICATES_WITH]->(b:Person) "
+        "MATCH (a:Person)-[r:COMMUNICATES_WITH]-(b:Person) "
+        "WHERE a.email < b.email "
         "RETURN a.email AS source, b.email AS target, properties(r) AS properties"
     )
     return {"nodes": nodes, "edges": edges}
@@ -40,8 +41,8 @@ def get_subgraph(email: str, depth: int = 1):
 
     emails = [n["email"] for n in nodes]
     edges = read_query(
-        "MATCH (a:Person)-[r:COMMUNICATES_WITH]->(b:Person) "
-        "WHERE a.email IN $emails AND b.email IN $emails "
+        "MATCH (a:Person)-[r:COMMUNICATES_WITH]-(b:Person) "
+        "WHERE a.email < b.email AND a.email IN $emails AND b.email IN $emails "
         "RETURN a.email AS source, b.email AS target, properties(r) AS properties",
         {"emails": emails},
     )
@@ -53,7 +54,7 @@ def get_metadata():
     """Return basic graph stats."""
     counts = read_query(
         "MATCH (p:Person) "
-        "OPTIONAL MATCH ()-[r:COMMUNICATES_WITH]->() "
+        "OPTIONAL MATCH ()-[r:COMMUNICATES_WITH]-() "
         "RETURN count(DISTINCT p) AS node_count, count(DISTINCT r) AS edge_count"
     )
     degrees = read_query(

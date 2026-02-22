@@ -1,1 +1,3 @@
 neo4j==5.*
+openai==1.*
+python-dotenv==1.*
