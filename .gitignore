@@ -8,4 +8,5 @@ neo4j_data/
 
 *.csv
 *.parquet
+*.zip
 .venv/
