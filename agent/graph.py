@@ -3,6 +3,11 @@ from __future__ import annotations
 from neo4j import GraphDatabase
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
+import os
+import json
+
+_aliases = None
+
 def email_to_name(email: str) -> str:
     global _aliases
     if _aliases is None:
@@ -91,6 +96,8 @@ def append_comment_recipient_pairs(
 def increment_email_count(tx, email_a: str, email_b: str):
     """Bump email_count by 1 for a pair (called once per email per pair)."""
     lo, hi = normalize_pair(email_a, email_b)
+    lo = email_to_name(lo)
+    hi = email_to_name(hi)
     tx.run(
         "MATCH (a:Person {email: $lo})-[r:COMMUNICATES_WITH]-(b:Person {email: $hi}) "
         "SET r.email_count = coalesce(r.email_count, 0) + 1",
@@ -102,6 +109,8 @@ def increment_email_count_batch(tx, pairs: list[tuple[str, str]]) -> None:
     """Bump email_count by 1 for each pair in one transaction."""
     for email_a, email_b in pairs:
         lo, hi = normalize_pair(email_a, email_b)
+        lo = email_to_name(lo)
+        hi = email_to_name(hi)
         tx.run(
             "MATCH (a:Person {email: $lo})-[r:COMMUNICATES_WITH]-(b:Person {email: $hi}) "
             "SET r.email_count = coalesce(r.email_count, 0) + 1",
@@ -111,6 +120,8 @@ def increment_email_count_batch(tx, pairs: list[tuple[str, str]]) -> None:
 
 def get_comments(tx, email_a: str, email_b: str) -> list[str]:
     lo, hi = normalize_pair(email_a, email_b)
+    lo = email_to_name(lo)
+    hi = email_to_name(hi)
     result = tx.run(
         "MATCH (a:Person {email: $lo})-[r:COMMUNICATES_WITH]-(b:Person {email: $hi}) "
         "RETURN r.comments AS comments",
@@ -122,6 +133,8 @@ def get_comments(tx, email_a: str, email_b: str) -> list[str]:
 
 def set_summary(tx, email_a: str, email_b: str, summary: str):
     lo, hi = normalize_pair(email_a, email_b)
+    lo = email_to_name(lo)
+    hi = email_to_name(hi)
     tx.run(
         "MATCH (a:Person {email: $lo})-[r:COMMUNICATES_WITH]-(b:Person {email: $hi}) "
         "SET r.summary = $summary",
@@ -133,6 +146,8 @@ def set_summary_batch(tx, updates: list[tuple[str, str, str]]) -> None:
     """Set summary for multiple edges in one transaction. Each item is (email_a, email_b, summary)."""
     for email_a, email_b, summary in updates:
         lo, hi = normalize_pair(email_a, email_b)
+        lo = email_to_name(lo)
+        hi = email_to_name(hi)
         tx.run(
             "MATCH (a:Person {email: $lo})-[r:COMMUNICATES_WITH]-(b:Person {email: $hi}) "
             "SET r.summary = $summary",
