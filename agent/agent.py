@@ -11,12 +11,15 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+import ipdb
+import itertools
 
 from openai import OpenAI
 from config import OPENROUTER_API_KEY, OPENROUTER_MODEL
 from graph import (
     get_driver,
     ensure_constraints,
+    upsert_persons,
     append_comment,
     append_comment_batch,
     append_comment_recipient_pairs,
@@ -43,11 +46,11 @@ TOOL_ADD_ONE = {
         "parameters": {
             "type": "object",
             "properties": {
-                "from_email": {"type": "string", "description": "Email of one person."},
-                "to_email": {"type": "string", "description": "Email of the other person."},
+                "from_person": {"type": "string", "description": "The exact Identifier (Name or Email) of one person from the provided list."},
+                "to_person": {"type": "string", "description": "The exact Identifier (Name or Email) of the other person from the provided list."},
                 "comment": {"type": "string", "description": "Concise observation about this pair."},
             },
-            "required": ["from_email", "to_email", "comment"],
+            "required": ["from_person", "to_person", "comment"],
         },
     },
 }
@@ -57,32 +60,60 @@ TOOL_ADD_BATCH = {
     "function": {
         "name": "add_relationship_comments_batch",
         "description": (
-            "Record the same observation for one sender and many recipients in one call "
-            "(e.g. one person emailed a group). Creates sender–recipient edges and also "
-            "links recipients to each other as 'same audience' (copied together). Use when "
-            "one person communicated the same thing to multiple people."
+            "Record the same observation between one central person and multiple other people. "
+            "This creates N relationships: one between 'from_person' and each Identifier in 'to_people'. "
+            "Example: One person coordinating with many others, or one person mentioned alongside several others."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "from_email": {"type": "string", "description": "Sender / central person."},
-                "to_emails": {
+                "from_person": {"type": "string", "description": "The central Identifier from the provided list."},
+                "to_people": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of recipient email addresses.",
+                    "description": "List of Identifiers for the people who share this relationship with from_person.",
                 },
-                "comment": {"type": "string", "description": "Concise observation (same for all)."},
+                "comment": {"type": "string", "description": "The observation shared between from_person and each of the to_people."},
             },
-            "required": ["from_email", "to_emails", "comment"],
+            "required": ["from_person", "to_people", "comment"],
         },
     },
 }
 
-TOOL_SCHEMAS = [TOOL_ADD_ONE, TOOL_ADD_BATCH]
+TOOL_ADD_GROUP = {
+    "type": "function",
+    "function": {
+        "name": "add_relationship_group",
+        "description": (
+            "Record the same observation for all members of a group. "
+            "Creates relationships between every possible pair of people in the list (N*N relationships)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "people": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of exact Identifiers for all people in the group.",
+                },
+                "comment": {"type": "string", "description": "Concise observation shared by all group members (e.g. 'Co-defendants', 'Same audience on sensitive email')."},
+            },
+            "required": ["people", "comment"],
+        },
+    },
+}
+
+TOOL_SCHEMAS = [TOOL_ADD_ONE, TOOL_ADD_BATCH, TOOL_ADD_GROUP]
 
 SYSTEM_PROMPT = """\
 You are a relationship-extraction agent. You will receive an email chain and \
-a list of email addresses that appear in it.
+a list of **Identifiers** for the people involved.
+
+**Crucial Logic for Identifiers:**
+- These Identifiers could be **Names** (e.g., "Jeffrey Epstein") or **Email Addresses** (e.g., "jeff@example.com").
+- You MUST strictly and exactly use the Identifiers as provided in the list.
+- Do NOT change character case, fix typos, or convert an Email into a Name yourself. 
+- If a person is mentioned in the text but is NOT in the provided Identifier list, do NOT invent an Identifier for them.
 
 Your goal: help reveal **fraud and suspicious activity** by identifying relationships \
 and dynamics that matter for that purpose. Analyse the chain and record only \
@@ -101,24 +132,30 @@ What is suspicious (prioritise these when present):
 Also record other important dynamics (collaboration, delegation, reporting, conflict) that \
 reveal roles or power, even when not obviously fraudulent—they can connect to fraud later.
 
-Tools:
-- `add_relationship_comment`: one (from_email, to_email, comment). Use for a single pair \
-  or when each relationship has a different observation.
-- `add_relationship_comments_batch`: (from_email, to_emails[], comment). Use when one \
-  person sent the same kind of communication to many recipients (e.g. group email). \
-  Records sender–recipient edges and also links recipients to each other (same audience).
+List of tools:
+- `add_relationship_comment`: one (from_person, to_person, comment).
+- `add_relationship_comments_batch`: (from_person, to_people[], comment). Use when one person \
+  has the exact same relationship dynamic with many others simultaneously.
+- `add_relationship_group`: (people[], comment). Use when everyone in the list has the exact \
+  same relationship to everyone else (clique). This creates an observation between every pair in the group.
 
 Guidelines:
-- Only use email addresses from the provided list.
-- **Record only important, actionable relationship dynamics** (especially suspicious ones). \
-  Do NOT add relationships for: routine FYI, out-of-office, single logistical reply, \
-  trivial one-off mentions, or when there is no substantive or suspicious dynamic.
-- If there are **no** such significant or suspicious relationships in the chain, do not call any tools. \
-  Respond with a brief summary only (e.g. "No significant or suspicious relationship dynamics in this chain.").
-- Extract at most 5–7 of the most important (and suspicious, when present) observations per chain; skip the rest.
-- Prefer the batch tool when one sender emailed many people with the same observation.
-- Be specific and ground observations in the email content; for suspicious behaviour, note what was said or implied.
-- When you have extracted all relevant insights, stop calling tools and respond with \
+- **Strictly use the Identifiers provided in the list**. Do not change case or format.
+- Only use people (names or emails) from the provided list.
+- **Only record observations that are investigatively useful.** This tool exists to \
+uncover fraud and crime. Every comment should reveal something suspicious, expose a \
+power dynamic, or document a pattern that could connect to wrongdoing. Do NOT record \
+mundane professional interactions, routine coordination, or anything an investigator \
+would not care about.
+- **CRITICAL: Limit your output to under 3 tool calls per chain.** Focus on the highest-priority insights.
+- **Comments must be self-contained**: each comment should be understandable on its own, \
+without access to the original email. Include enough context (what happened, what was \
+requested, why it matters) so someone reading only the comment can grasp the insight. \
+Keep it to 1–2 sentences—concise, but never so vague that the reader can't tell what occurred.
+- Do NOT add relationships for: routine FYI, out-of-office, single logistical reply, or trivial one-offs.
+- If there are **no** substantive relationships, respond with a brief summary only.
+- Prefer batch or group tools when relevant to minimize the number of tool calls.
+- When you have extracted the most relevant insights, stop calling tools and respond with \
   a brief summary of what you found.\
 """
 
@@ -139,12 +176,16 @@ MAX_SUMMARY_WORKERS = 8
 SUMMARY_WRITE_BATCH_SIZE = 25
 
 
-def should_process_chain(chain_text: str) -> bool:
+def should_process_chain(chain_text: str, people: Optional[list[str]] = None) -> bool:
     """
     Return False if the chain is clearly low-value (trivial, automated, or too small).
     Uses heuristics only; no LLM call.
     """
-    addresses = parse_emails_from_chain(chain_text)
+    if people is not None:
+        addresses = people
+    else:
+        addresses = parse_emails_from_chain(chain_text)
+
     if len(addresses) < MIN_ADDRESSES_FOR_TRIAGE:
         return False
     if SKIP_PATTERNS.search(chain_text):
@@ -162,16 +203,19 @@ def parse_emails_from_chain(chain_text: str) -> list[str]:
     return list(dict.fromkeys(EMAIL_RE.findall(chain_text)))
 
 
-def run_agent_from_chain_text(chain_text: str) -> str:
+def run_agent_from_chain_text(chain_text: str, people: Optional[list[str]] = None) -> str:
     """
     Run the agent on a single email chain string (e.g. chain_text from your CSV).
     Parses email addresses from the chain and calls run_agent.
     Skips chains that fail triage (should_process_chain).
     """
-    addresses = parse_emails_from_chain(chain_text)
+    if people is None:
+        addresses = parse_emails_from_chain(chain_text)
+    else:
+        addresses = people
     if not addresses:
         return "(no email addresses found in chain)"
-    if not should_process_chain(chain_text):
+    if not should_process_chain(chain_text, addresses):
         return "(skipped: chain unlikely to have significant relationships)"
     return run_agent(addresses, chain_text)
 
@@ -185,9 +229,12 @@ def run_agent(email_addresses: list[str], email_chain: str) -> str:
     driver = get_driver()
     ensure_constraints(driver)
 
+    with driver.session() as session:
+        session.execute_write(upsert_persons, email_addresses)
+
     address_list = "\n".join(f"- {addr}" for addr in email_addresses)
     user_message = (
-        f"Email addresses involved:\n{address_list}\n\n"
+        f"People involved (use these names exactly):\n{address_list}\n\n"
         f"--- EMAIL CHAIN ---\n{email_chain}"
     )
 
@@ -218,32 +265,40 @@ def run_agent(email_addresses: list[str], email_chain: str) -> str:
         for tool_call in assistant_msg.tool_calls:
             args = json.loads(tool_call.function.arguments)
             name = tool_call.function.name
-            from_email = args["from_email"]
             comment = args["comment"]
 
             if name == "add_relationship_comments_batch":
-                to_emails = args.get("to_emails") or []
-                to_emails = [e for e in to_emails if e != from_email]
-                recipient_comment = f"Same audience (copied together on email from {from_email}): {comment}"
+                from_person = args["from_person"].strip()
+                to_people = [p.strip() for p in (args.get("to_people") or [])]
+                to_people = [p for p in to_people if p != from_person]
                 with driver.session() as session:
                     session.execute_write(
-                        append_comment_batch, from_email, to_emails, comment
+                        append_comment_batch, from_person, to_people, comment
                     )
-                    if len(to_emails) >= 2:
-                        session.execute_write(
-                            append_comment_recipient_pairs,
-                            to_emails,
-                            recipient_comment,
-                        )
-                for to_email in to_emails:
-                    modified_pairs.add(tuple(sorted([from_email, to_email])))
-                tool_result = {"status": "ok", "from": from_email, "to_count": len(to_emails)}
-            else:
-                to_email = args["to_email"]
+                for p in to_people:
+                    modified_pairs.add(tuple(sorted([from_person, p])))
+                tool_result = {"status": "ok", "person": from_person, "to_count": len(to_people)}
+            
+            elif name == "add_relationship_group":
+                people = [p.strip() for p in (args.get("people") or [])]
                 with driver.session() as session:
-                    session.execute_write(append_comment, from_email, to_email, comment)
-                modified_pairs.add(tuple(sorted([from_email, to_email])))
-                tool_result = {"status": "ok", "from": from_email, "to": to_email}
+                    session.execute_write(
+                        append_comment_recipient_pairs,
+                        people,
+                        comment,
+                    )
+                # Add all pairs to modified_pairs for count increment logic
+                for p1, p2 in itertools.combinations(people, 2):
+                    modified_pairs.add(tuple(sorted([p1, p2])))
+                tool_result = {"status": "ok", "group_count": len(people)}
+            
+            else:
+                from_person = args["from_person"].strip()
+                to_person = args["to_person"].strip()
+                with driver.session() as session:
+                    session.execute_write(append_comment, from_person, to_person, comment)
+                modified_pairs.add(tuple(sorted([from_person, to_person])))
+                tool_result = {"status": "ok", "from": from_person, "to": to_person}
 
             messages.append({
                 "role": "tool",

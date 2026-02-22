@@ -12,10 +12,13 @@ Usage:
 """
 
 import argparse
+import ast
 import csv
 import sys
 from pathlib import Path
 
+import pandas as pd
+import ipdb
 from tqdm import tqdm
 
 from agent import run_agent, run_agent_from_chain_text, summarize_edges
@@ -97,23 +100,23 @@ def main():
             sys.exit(1)
         # Allow very large email body fields (default limit is 128KB)
         csv.field_size_limit(min(2**31 - 1, sys.maxsize))
-        chain_column = "email_text_clean"
-        with open(csv_path, newline="", encoding="utf-8", errors="replace") as f:
-            reader = csv.DictReader(f)
-            if chain_column not in reader.fieldnames:
-                chain_column = "email_text"
-            if chain_column not in reader.fieldnames:
-                print(f"CSV must have column 'email_text_clean' or 'email_text'. Found: {reader.fieldnames}")
-                sys.exit(1)
-            rows = list(reader)
-        total = len(rows)
+        chain_column = "email_text"
+        participants_column = "participants"
+        people_column = "people_mentioned"
+        
+        df = pd.read_csv(csv_path)
+        total = len(df)
         print(f"Running agent on {total} rows from {csv_path.name} (column: {chain_column})")
-        for row in tqdm(rows, desc="Chains", unit="chain"):
-            chain_text = (row.get(chain_column) or "").strip()
+        for i, row in tqdm(df.iterrows(), desc="Chains", unit="chain"):
+            chain_text = (row[chain_column] or "").strip()
+            participants = ast.literal_eval(row[participants_column] or "[]")
+            people = ast.literal_eval(row[people_column] or "[]")
+            # ipdb.set_trace()
             if not chain_text:
+                print('empty chain text')
                 continue
             try:
-                run_agent_from_chain_text(chain_text)
+                run_agent_from_chain_text(chain_text, list(set(participants) | set(people)))
             except Exception as e:
                 tqdm.write(f"Error on row: {e}")
         print("\nDone. Run 'python main.py summarize' to generate edge summaries.")
