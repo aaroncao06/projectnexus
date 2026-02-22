@@ -35,32 +35,6 @@ def ensure_constraints(driver):
         )
 
 
-# def upsert_person(tx, email: str, name: str = None):
-#     if name:
-#         tx.run(
-#             "MERGE (p:Person {email: $email}) "
-#             "ON CREATE SET p.name = $name "
-#             "ON MATCH SET p.name = $name",
-#             email=email, name=name
-#         )
-#     else:
-#         tx.run("MERGE (p:Person {email: $email})", email=email)
-
-
-# def upsert_persons(tx, email_names: dict[str, str]) -> None:
-#     """Upsert all given emails as Person nodes in one transaction, adding names if provided."""
-#     for email, name in email_names.items():
-#         if name:
-#             tx.run(
-#                 "MERGE (p:Person {email: $email}) "
-#                 "ON CREATE SET p.name = $name "
-#                 "ON MATCH SET p.name = $name",
-#                 email=email, name=name
-#             )
-#         else:
-#             tx.run("MERGE (p:Person {email: $email})", email=email)
-
-
 def append_comment(tx, email_a: str, email_b: str, comment: str):
     """Normalize pair order, MERGE edge, append comment to list."""
     lo, hi = normalize_pair(email_a, email_b)

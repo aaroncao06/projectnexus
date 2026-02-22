@@ -17,7 +17,6 @@ from config import OPENROUTER_API_KEY, OPENROUTER_MODEL
 from graph import (
     get_driver,
     ensure_constraints,
-    upsert_persons,
     append_comment,
     append_comment_batch,
     append_comment_recipient_pairs,
@@ -185,9 +184,6 @@ def run_agent(email_addresses: list[str], email_chain: str) -> str:
     """
     driver = get_driver()
     ensure_constraints(driver)
-
-    with driver.session() as session:
-        session.execute_write(upsert_persons, email_addresses)
 
     address_list = "\n".join(f"- {addr}" for addr in email_addresses)
     user_message = (
