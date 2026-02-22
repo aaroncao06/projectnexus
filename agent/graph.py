@@ -38,6 +38,43 @@ def append_comment(tx, email_a: str, email_b: str, comment: str):
     )
 
 
+def append_comment_cross(
+    tx,
+    a_emails: list[str],
+    b_emails: list[str],
+    comment: str,
+) -> None:
+    """
+    Append the same comment to every (a, b) edge for a in a_emails, b in b_emails.
+    Creates O(len(a_emails) * len(b_emails)) edges (skips self, dedupes by pair).
+    Use for e.g. one group emailed another, or one sender to many recipients.
+    """
+    seen: set[tuple[str, str]] = set()
+    for a in a_emails:
+        for b in b_emails:
+            if a == b:
+                continue
+            pair = normalize_pair(a, b)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            append_comment(tx, a, b, comment)
+
+
+def append_comment_batch(tx, from_email: str, to_emails: list[str], comment: str):
+    """Append the same comment to multiple (from_email, to_email) edges in one transaction."""
+    append_comment_cross(tx, [from_email], to_emails, comment)
+
+
+def append_comment_recipient_pairs(
+    tx, recipient_emails: list[str], comment: str
+) -> None:
+    """
+    Link every pair of recipients with the same comment (e.g. "copied together on same email").
+    """
+    append_comment_cross(tx, recipient_emails, recipient_emails, comment)
+
+
 def increment_email_count(tx, email_a: str, email_b: str):
     """Bump email_count by 1 for a pair (called once per email per pair)."""
     lo, hi = normalize_pair(email_a, email_b)

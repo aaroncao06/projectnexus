@@ -3,12 +3,14 @@ AI Agent CLI.
 
 Usage:
     python main.py ingest          Run agent on a sample email chain.
+    python main.py ingest-fake     Run agent on all fake test chains.
     python main.py summarize       Generate summaries for all annotated edges.
 """
 
 import sys
 
-from agent import run_agent, summarize_edges
+from agent import run_agent, run_agent_from_chain_text, summarize_edges
+from fake_data import FAKE_CHAINS
 
 SAMPLE_ADDRESSES = [
     "alice@example.com",
@@ -73,6 +75,12 @@ def main():
     if command == "ingest":
         summary = run_agent(SAMPLE_ADDRESSES, SAMPLE_EMAIL_CHAIN)
         print(f"\nAgent summary:\n{summary}")
+    elif command == "ingest-fake":
+        for name, chain_text in FAKE_CHAINS:
+            print(f"\n--- {name} ---")
+            summary = run_agent_from_chain_text(chain_text)
+            print(f"Summary: {summary}")
+        print("\nDone. Run 'python main.py summarize' to generate edge summaries.")
     elif command == "summarize":
         summarize_edges()
     else:
