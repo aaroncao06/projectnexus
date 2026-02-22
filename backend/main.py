@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from db import read_query
+from db import read_query, get_driver
+from clustering import ensure_clustered
 
 app = FastAPI(title="ProjectNexus API", version="0.1.0")
 
@@ -13,10 +14,12 @@ app.add_middleware(
 
 
 @app.get("/graph")
-def get_full_graph():
-    """Return all nodes and relationships."""
+def get_full_graph(request: Request):
+    """Return all nodes and relationships. Auto-runs clustering if any node has no cluster (use ?recluster=1 to force)."""
+    force = request.query_params.get("recluster") == "1"
+    ensure_clustered(get_driver(), force=force)
     nodes = read_query(
-        "MATCH (p:Person) RETURN p.email AS email, p.name AS name, p.cluster AS cluster"
+        "MATCH (p:Person) RETURN p.email AS email, p.name AS name, p.cluster AS cluster, p.cluster_name AS cluster_name"
     )
     edges = read_query(
         "MATCH (a:Person)-[r:COMMUNICATES_WITH]-(b:Person) "
@@ -34,7 +37,7 @@ def get_subgraph(email: str, depth: int = 1):
         f"MATCH (origin:Person {{email: $email}})-[*1..{depth}]-(connected:Person) "
         "WITH collect(DISTINCT connected) + collect(DISTINCT origin) AS people "
         "UNWIND people AS p "
-        "RETURN DISTINCT p.email AS email, p.name AS name, p.cluster AS cluster",
+        "RETURN DISTINCT p.email AS email, p.name AS name, p.cluster AS cluster, p.cluster_name AS cluster_name",
         {"email": email},
     )
     if not nodes:

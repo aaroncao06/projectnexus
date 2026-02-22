@@ -4,15 +4,17 @@ import { fetchGraph, fetchSubgraph, fetchMeta, type GraphData, type MetaData, ty
 
 const CLUSTER_COLORS = ["#6366f1","#f97316","#22c55e","#ec4899","#06b6d4","#eab308","#a855f7","#ef4444","#14b8a6","#f59e0b"];
 
-const CLUSTER_LABELS: Record<number, string> = {
-  0: "Securities Fraud",
-  1: "Money Laundering",
-  2: "Identity Theft",
-  3: "Wire Fraud / Phishing",
-  4: "Insider Trading",
-};
-
 type ViewMode = "graph" | "clusters";
+
+/** Derive cluster id -> display name from nodes (uses cluster_name from API when set). */
+function getClusterNameMap(nodes: { cluster?: number; cluster_name?: string }[]): Map<number, string> {
+  const map = new Map<number, string>();
+  nodes.forEach((n) => {
+    const c = n.cluster ?? 0;
+    if (!map.has(c)) map.set(c, n.cluster_name ?? `Cluster ${c}`);
+  });
+  return map;
+}
 
 function toGraphNodes(data: GraphData) {
   return data.nodes.map((n) => ({ id: n.email, name: n.name, cluster: n.cluster ?? 0, isClusterNode: false }));
@@ -32,7 +34,8 @@ function toGraphLinks(data: GraphData) {
  * with inter-cluster edges aggregated.
  */
 function toClusterGraph(data: GraphData) {
-  // Group nodes by cluster
+  const clusterNameMap = getClusterNameMap(data.nodes);
+
   const clusterMap = new Map<number, typeof data.nodes>();
   data.nodes.forEach((n) => {
     const c = n.cluster ?? 0;
@@ -40,14 +43,12 @@ function toClusterGraph(data: GraphData) {
     clusterMap.get(c)!.push(n);
   });
 
-  // Build email-to-cluster lookup
   const emailToCluster = new Map<string, number>();
   data.nodes.forEach((n) => emailToCluster.set(n.email, n.cluster ?? 0));
 
-  // Create super-nodes
   const nodes = [...clusterMap.entries()].map(([id, members]) => ({
     id: `cluster-${id}`,
-    name: `${CLUSTER_LABELS[id] ?? `Cluster ${id}`} (${members.length})`,
+    name: `${clusterNameMap.get(id) ?? `Cluster ${id}`} (${members.length})`,
     cluster: id,
     isClusterNode: true,
     memberCount: members.length,
@@ -87,6 +88,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [expandedCluster, setExpandedCluster] = useState<number | null>(null);
+  const [reclustering, setReclustering] = useState(false);
 
   useEffect(() => {
     fetchGraph().then((data) => {
@@ -166,6 +168,23 @@ export default function App() {
     }
   };
 
+  const handleRecluster = async () => {
+    setReclustering(true);
+    setError(null);
+    try {
+      const full = await fetchGraph(true);
+      setFullGraphData(full);
+      setGraphData(full);
+      setSelected(null);
+      setSelectedEdge(null);
+      setExpandedCluster(null);
+    } catch {
+      setError("Recluster failed. Is OPENROUTER_API_KEY set on the backend?");
+    } finally {
+      setReclustering(false);
+    }
+  };
+
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
     setSelected(null);
@@ -177,7 +196,8 @@ export default function App() {
   const sourceName = graphData?.nodes.find(n => n.email === selectedEdge?.source)?.name ?? selectedEdge?.source;
   const targetName = graphData?.nodes.find(n => n.email === selectedEdge?.target)?.name ?? selectedEdge?.target;
 
-  // Build cluster info for legend
+  const clusterNameMap = useMemo(() => graphData ? getClusterNameMap(graphData.nodes) : new Map<number, string>(), [graphData]);
+
   const clusterInfo = useMemo(() => {
     if (!graphData) return [];
     const clusters = new Map<number, string[]>();
@@ -222,6 +242,23 @@ export default function App() {
         {meta && (
           <div style={{ marginBottom: 20, fontSize: 13, color: "#94a3b8" }}>
             <p>{meta.counts.node_count} people &middot; {meta.counts.edge_count} connections</p>
+            <button
+              onClick={handleRecluster}
+              disabled={reclustering}
+              style={{
+                marginTop: 8,
+                padding: "6px 12px",
+                fontSize: 12,
+                background: "#334155",
+                color: "#e2e8f0",
+                border: "1px solid #475569",
+                borderRadius: 6,
+                cursor: reclustering ? "wait" : "pointer",
+                opacity: reclustering ? 0.7 : 1,
+              }}
+            >
+              {reclustering ? "Reclustering…" : "Recluster (LLM names)"}
+            </button>
           </div>
         )}
 
@@ -230,7 +267,7 @@ export default function App() {
           <div style={{ marginBottom: 16 }}>
             <p style={{ fontSize: 13, color: "#94a3b8" }}>Viewing cluster:</p>
             <p style={{ fontWeight: 600, color: CLUSTER_COLORS[expandedCluster % CLUSTER_COLORS.length] }}>
-              {CLUSTER_LABELS[expandedCluster] ?? `Cluster ${expandedCluster}`}
+              {clusterNameMap.get(expandedCluster) ?? `Cluster ${expandedCluster}`}
             </p>
             <button
               onClick={() => setExpandedCluster(null)}
@@ -298,7 +335,7 @@ export default function App() {
               >
                 <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: CLUSTER_COLORS[id % CLUSTER_COLORS.length], marginRight: 6, verticalAlign: "middle" }} />
                 <span style={{ color: expandedCluster === id ? CLUSTER_COLORS[id % CLUSTER_COLORS.length] : "#cbd5e1" }}>
-                  {CLUSTER_LABELS[id] ?? `Cluster ${id}`}
+                  {clusterNameMap.get(id) ?? `Cluster ${id}`}
                 </span>
                 <span style={{ color: "#64748b" }}> ({names.length})</span>
               </div>
@@ -316,7 +353,11 @@ export default function App() {
                   onClick={() => handleNodeClick(d.email)}
                   style={{ padding: "4px 0", cursor: "pointer", color: d.email === selected ? "#f97316" : "#cbd5e1" }}
                 >
-                  {d.name} <span style={{ color: "#64748b" }}>({d.degree})</span>
+                  <span style={{ fontWeight: 500 }}>{d.name || d.email}</span>
+                  {d.name && d.email && (
+                    <span style={{ fontSize: 11, color: "#64748b", display: "block", marginTop: 1 }}>{d.email}</span>
+                  )}
+                  <span style={{ color: "#64748b" }}> ({d.degree})</span>
                 </li>
               ))}
             </ul>

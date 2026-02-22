@@ -4,6 +4,7 @@ export interface Person {
   email: string;
   name: string;
   cluster?: number;
+  cluster_name?: string;
 }
 
 export interface Edge {
@@ -38,8 +39,9 @@ export interface MetaData {
   degrees: Degree[];
 }
 
-export async function fetchGraph(): Promise<GraphData> {
-  const res = await fetch(`${API_BASE}/graph`);
+export async function fetchGraph(recluster = false): Promise<GraphData> {
+  const url = recluster ? `${API_BASE}/graph?recluster=1` : `${API_BASE}/graph`;
+  const res = await fetch(url);
   return res.json();
 }
 
