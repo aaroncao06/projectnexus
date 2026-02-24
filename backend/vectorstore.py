@@ -1,4 +1,4 @@
-"""Multi-namespace Pinecone retriever using RapidFire AI + LangChain."""
+"""Multi-namespace Pinecone retriever using LangChain + OpenAI embeddings."""
 
 import os
 from typing import Any
@@ -11,8 +11,6 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from openai import OpenAI
 from langchain_pinecone import PineconeVectorStore
-from langchain_text_splitters import CharacterTextSplitter
-from rapidfireai.automl import RFLangChainRagSpec
 
 from config import (
     DEFAULT_NAMESPACES,
@@ -23,7 +21,7 @@ from config import (
 )
 
 class _NoOpLoader(BaseLoader):
-    """No-op document loader for pre-indexed data."""
+    """No-op document loader for pre-indexed data (kept for API compatibility)."""
 
     def lazy_load(self) -> Iterator[Document]:
         return iter([])
@@ -135,18 +133,16 @@ def get_rag_spec(
     namespaces: list[str] | None = None,
     top_k: int | None = None,
 ):
-    """Return an RFLangChainRagSpec backed by the multi-namespace retriever. Requires rapidfireai."""
-    from rapidfireai.automl import RFLangChainRagSpec
+    """Placeholder for the old rapidfireai-based RAG spec.
 
-    retriever = get_retriever(namespaces=namespaces, top_k=top_k)
-    return RFLangChainRagSpec(
-        document_loader=_NoOpLoader(),
-        text_splitter=CharacterTextSplitter(chunk_size=1000, chunk_overlap=0),
-        embedding_cls=OpenAIEmbeddingsWrapper,
-        embedding_kwargs={"model_name": EMBEDDING_MODEL},
-        retriever=retriever,
-        search_type="similarity",
-        search_kwargs={"k": top_k or RAG_TOP_K},
+    rapidfireai (and thus PyTorch) has been removed from the deployment
+    to keep the Vercel Lambda bundle small. This helper is left as a stub
+    so that any legacy imports fail with a clear message if called.
+    """
+    raise RuntimeError(
+        "get_rag_spec is not available in this deployment because it depended on "
+        "rapidfireai/PyTorch, which were removed to keep the serverless bundle small. "
+        "Use the `search` helper with your own LangChain pipeline instead."
     )
 
 

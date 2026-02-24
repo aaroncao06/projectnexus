@@ -1,6 +1,6 @@
-"""RAG pipeline using RapidFire AI's RFLangChainRagSpec + OpenRouter."""
+"""RAG pipeline using Pinecone + OpenRouter (no rapidfireai dependency)."""
 
-from vectorstore import search, get_rag_spec
+from vectorstore import search
 from llm import complete
 from db import read_query
 

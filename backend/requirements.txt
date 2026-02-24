@@ -10,7 +10,6 @@ openai==1.*
 pinecone[asyncio]>=6,<8
 # Use OpenAI embeddings instead of local sentence-transformers to reduce bundle size
 # sentence-transformers and torch removed
-rapidfireai
 langchain-pinecone>=0.2.13
 langchain-core
 langchain-community

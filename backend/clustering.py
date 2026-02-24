@@ -1,21 +1,17 @@
 """
-Graph clustering using K-Means and Louvain community detection.
+Graph clustering using Louvain community detection.
 
 Pulls graph data from Neo4j, computes clusters, assigns a category name per cluster,
 and writes `cluster` and `cluster_name` back onto each Person node.
 
 Usage:
-    python clustering.py kmeans [n]       # K-Means, default n=4
     python clustering.py louvain          # Louvain (k automatic)
-    python clustering.py kmeans 5 --llm   # K-Means with LLM-generated cluster names (needs OPENROUTER_API_KEY)
 """
 
 import os
 import sys
 import threading
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 import networkx as nx
 from community import community_louvain  # python-louvain
 
@@ -83,39 +79,6 @@ def build_feature_matrix(G):
         ])
 
     return emails, np.array(features)
-
-
-def run_kmeans(driver, n_clusters=4, use_llm=False):
-    """Run K-Means clustering, assign category names, and write back to Neo4j."""
-    print(f"Running K-Means clustering (k={n_clusters})...")
-
-    nodes, edges = fetch_graph_data(driver)
-    G = build_networkx_graph(nodes, edges)
-    emails, X = build_feature_matrix(G)
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    k = min(n_clusters, len(emails))
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X_scaled)
-
-    # Assign category names (LLM if requested and available, else rule-based)
-    cluster_names = None
-    if use_llm:
-        cluster_names = assign_cluster_names_llm(emails, labels.tolist(), G)
-    if cluster_names is None:
-        cluster_names = assign_cluster_names_rule(G, emails, labels.tolist())
-    write_clusters(driver, emails, labels.tolist(), cluster_names)
-
-    print(f"\nK-Means clustering complete ({k} clusters):\n")
-    for cluster_id in range(k):
-        name = cluster_names[cluster_id] if cluster_id < len(cluster_names) else f"Cluster {cluster_id}"
-        members = [emails[i] for i, l in enumerate(labels) if l == cluster_id]
-        member_names = [str(G.nodes[e].get("name") or e) for e in members]
-        print(f"  {name}: {', '.join(member_names)}")
-
-    return dict(zip(emails, [int(l) for l in labels]))
 
 
 def run_louvain(driver, use_llm=False, silent=False):
@@ -327,17 +290,14 @@ def main():
     use_llm = "--llm" in flags
 
     method = args[0].lower() if args else ""
-    n_clusters = int(args[1]) if len(args) > 1 else 4
 
     driver = get_driver()
 
-    if method == "kmeans":
-        run_kmeans(driver, n_clusters=n_clusters, use_llm=use_llm)
-    elif method == "louvain":
+    if method == "louvain":
         run_louvain(driver, use_llm=use_llm)
     else:
         print(f"Unknown method: {method}")
-        print("Use 'kmeans' or 'louvain'")
+        print("Use 'louvain'")
         sys.exit(1)
 
     driver.close()
