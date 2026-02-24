@@ -10,6 +10,7 @@ from db import read_query, get_driver, write_query
 from clustering import ensure_clustered
 from insights import compute_insights, invalidate_cache as invalidate_insights
 from rag import query as rag_query, generate_graph_insights
+from typing import Any
 
 app = FastAPI(title="ProjectNexus API", version="0.1.0")
 
@@ -176,6 +177,23 @@ def post_query(req: QueryRequest):
         return result
     except HTTPException:
         raise
+    except Exception as e:
+        _handle_pinecone_error(e)
+
+
+@app.post("/debug/rag")
+def debug_rag(req: QueryRequest):
+    """Debug endpoint: return raw retrieved documents and the context built for the LLM.
+
+    Useful to inspect what the retriever returns for a question/namespaces without
+    invoking the LLM generation.
+    """
+    try:
+        # Import here to avoid circular imports in module init
+        from vectorstore import search
+
+        results = search(req.question, namespaces=req.namespaces, top_k=10)
+        return {"n_results": len(results), "results": results}
     except Exception as e:
         _handle_pinecone_error(e)
 
