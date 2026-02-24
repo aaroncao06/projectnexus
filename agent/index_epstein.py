@@ -3,7 +3,7 @@
 Usage:
     python index_epstein.py /path/to/epstein_email.csv
 """
-
+from tqdm import tqdm
 import hashlib
 import sys
 import time
@@ -70,7 +70,7 @@ def index_epstein(csv_path: str):
     indexed_total = 0
     start_time = time.time()
 
-    for row_idx, (_, row) in enumerate(df.iterrows()):
+    for row_idx, (_, row) in tqdm(enumerate(df.iterrows())):
         email_text = str(row.get("email_text_clean", ""))
         if not email_text.strip():
             continue

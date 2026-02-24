@@ -9,7 +9,7 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_huggingface import HuggingFaceEmbeddings
+from openai import OpenAI
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import CharacterTextSplitter
 from rapidfireai.automl import RFLangChainRagSpec
@@ -35,14 +35,49 @@ os.environ.setdefault("PINECONE_API_KEY", PINECONE_API_KEY)
 _embeddings = None
 
 
-def get_embeddings() -> HuggingFaceEmbeddings:
+class OpenAIEmbeddingsWrapper:
+    """Thin wrapper exposing the methods expected by LangChain/Pinecone stores.
+
+    Provides `embed_documents` and `embed_query` which call the OpenAI
+    embeddings endpoint. The wrapper normalizes vectors to unit length to
+    preserve previous behaviour.
+    """
+
+    def __init__(self, model_name: str):
+        # Create OpenAI client with either OPENAI_API_KEY or OPENROUTER_API_KEY.
+        import os
+
+        # Prefer OpenRouter key if present, otherwise fall back to OpenAI key
+        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENROUTER_BASE_URL")
+        if not base_url and os.getenv("OPENROUTER_API_KEY"):
+            base_url = "https://openrouter.ai/api/v1"
+        if base_url:
+            self._client = OpenAI(base_url=base_url, api_key=api_key)
+        else:
+            self._client = OpenAI(api_key=api_key)
+        self.model_name = model_name
+
+    def _normalize(self, vec: list[float]) -> list[float]:
+        s = sum(x * x for x in vec)
+        if s <= 0:
+            return vec
+        norm = s ** 0.5
+        return [x / norm for x in vec]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        resp = self._client.embeddings.create(model=self.model_name, input=texts)
+        return [self._normalize(item.embedding) for item in resp.data]
+
+    def embed_query(self, text: str) -> list[float]:
+        resp = self._client.embeddings.create(model=self.model_name, input=[text])
+        return self._normalize(resp.data[0].embedding)
+
+
+def get_embeddings() -> OpenAIEmbeddingsWrapper:
     global _embeddings
     if _embeddings is None:
-        _embeddings = HuggingFaceEmbeddings(
-            model_name=f"sentence-transformers/{EMBEDDING_MODEL}",
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
+        _embeddings = OpenAIEmbeddingsWrapper(model_name=EMBEDDING_MODEL)
     return _embeddings
 
 
@@ -107,12 +142,8 @@ def get_rag_spec(
     return RFLangChainRagSpec(
         document_loader=_NoOpLoader(),
         text_splitter=CharacterTextSplitter(chunk_size=1000, chunk_overlap=0),
-        embedding_cls=HuggingFaceEmbeddings,
-        embedding_kwargs={
-            "model_name": f"sentence-transformers/{EMBEDDING_MODEL}",
-            "model_kwargs": {"device": "cpu"},
-            "encode_kwargs": {"normalize_embeddings": True},
-        },
+        embedding_cls=OpenAIEmbeddingsWrapper,
+        embedding_kwargs={"model_name": EMBEDDING_MODEL},
         retriever=retriever,
         search_type="similarity",
         search_kwargs={"k": top_k or RAG_TOP_K},
@@ -128,8 +159,10 @@ def search(
 
     Backward-compatible interface used by rag.py.
     """
+    print(f"vectorstore.search called: query={query!r} namespaces={namespaces} top_k={top_k}")
     retriever = get_retriever(namespaces=namespaces, top_k=top_k)
     docs = retriever.invoke(query)
+    print(f"vectorstore: retriever returned {len(docs)} documents")
     return [
         {"score": d.metadata.get("score", 0.0), **d.metadata, "text": d.page_content}
         for d in docs

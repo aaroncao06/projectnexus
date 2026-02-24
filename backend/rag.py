@@ -57,7 +57,9 @@ def query(
     namespaces: list[str] | None = None,
 ) -> dict:
     """Full RAG pipeline: embed question -> search Pinecone -> build prompt -> LLM."""
+    print(f"RAG.query called. question={user_question!r} namespaces={namespaces}")
     results = search(user_question, namespaces=namespaces)
+    print(f"RAG: search returned {len(results)} results")
     context = build_context(results)
 
     user_prompt = f"Context:\n{context}\n\n---\n\nQuestion: {user_question}"

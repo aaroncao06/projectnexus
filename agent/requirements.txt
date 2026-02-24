@@ -3,7 +3,6 @@ openai==1.*
 python-dotenv==1.*
 tqdm==4.*
 pinecone-client==5.*
-sentence-transformers>=2.7.0
-torch
+# Use OpenAI embeddings; remove local sentence-transformers and torch to shrink deployment size
 pandas
 pyarrow
