@@ -31,6 +31,9 @@ class QueryRequest(BaseModel):
 class InsightsRequest(BaseModel):
     model: str | None = None
 
+@app.get("/")
+def root():
+    return {"status": "Project Nexus backend running"}
 
 @app.get("/graph")
 def get_full_graph(request: Request):
