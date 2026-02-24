@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const RAW_API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// Normalize to avoid double slashes when building URLs
+const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
 
 export interface Person {
   email: string;
@@ -76,6 +78,10 @@ export async function queryRag(
 export async function fetchGraph(recluster = false): Promise<GraphData> {
   const url = recluster ? `${API_BASE}/graph?recluster=1` : `${API_BASE}/graph`;
   const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err.detail as string) || `Failed to fetch graph (status ${res.status})`);
+  }
   return res.json();
 }
 
@@ -87,6 +93,10 @@ export async function fetchSubgraph(email: string, depth = 1): Promise<GraphData
 
 export async function fetchMeta(): Promise<MetaData> {
   const res = await fetch(`${API_BASE}/meta`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err.detail as string) || `Failed to fetch meta (status ${res.status})`);
+  }
   return res.json();
 }
 

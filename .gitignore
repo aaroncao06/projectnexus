@@ -14,3 +14,4 @@ venv/
 
 raw_data/
 .bashrc
+.size-venv/
