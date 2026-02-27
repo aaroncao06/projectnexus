@@ -118,7 +118,7 @@ export default function App() {
   const [connectionsSearch, setConnectionsSearch] = useState("");
   const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
   const [minDegree, setMinDegree] = useState(1);
-  const [minEdgeObservations, setMinEdgeObservations] = useState(0);
+  const [minEdgeObservations, setMinEdgeObservations] = useState(1);
   const [showFiltersList, setShowFiltersList] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"graph" | "insights">("graph");
   const [insights, setInsights] = useState<Insight[]>([]);
@@ -273,10 +273,24 @@ export default function App() {
   }, [graphData, viewMode, expandedCluster, hiddenNodes, minDegree, minEdgeObservations]);
 
   const observationCounts = useMemo(() => {
-    if (!graphData) return [0];
-    const counts = [...new Set(graphData.edges.map(e => (e.properties?.comments?.length ?? 0)))].sort((a, b) => a - b);
-    return counts.length ? counts : [0];
+    if (!graphData) return [1];
+    const counts = [...new Set(graphData.edges.map(e => (e.properties?.comments?.length ?? 0)))]
+      .filter(c => c >= 1)
+      .sort((a, b) => a - b);
+    const withDefault = [...new Set([...counts, 1])].sort((a, b) => a - b);
+    return withDefault.length ? withDefault : [1];
   }, [graphData]);
+
+  const degreeCounts = useMemo(() => {
+    if (meta?.degrees?.length) {
+      return Array.from(new Set(meta.degrees.map(d => d.degree))).sort((a, b) => a - b);
+    }
+    if (graphData?.nodes?.length) {
+      const counts = [...new Set(graphData.nodes.map(n => n.degree ?? 0))].sort((a, b) => a - b);
+      return counts.length ? counts : [1];
+    }
+    return [1];
+  }, [meta, graphData]);
 
   const handleToggleVisibility = (email: string) => {
     setHiddenNodes(prev => {
@@ -879,35 +893,31 @@ export default function App() {
 
             {showFiltersList && (
               <div style={{ padding: "0 4px", display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                {meta && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
-                    <select
-                      value={minDegree}
-                      onChange={(e) => {
-                        setMinDegree(parseInt(e.target.value, 10));
-                        setLayoutSignal(s => s + 1);
-                      }}
-                      style={{
-                        width: 50,
-                        padding: "2px 4px",
-                        fontSize: 11,
-                        background: "#1e293b",
-                        color: "#f8fafc",
-                        border: "1px solid #334155",
-                        borderRadius: 4,
-                        outline: "none",
-                        cursor: "pointer"
-                      }}
-                    >
-                      {Array.from(new Set(meta.degrees.map(d => d.degree)))
-                        .sort((a, b) => a - b)
-                        .map(deg => (
-                          <option key={deg} value={deg}>{deg}</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
+                  <select
+                    value={minDegree}
+                    onChange={(e) => {
+                      setMinDegree(parseInt(e.target.value, 10));
+                      setLayoutSignal(s => s + 1);
+                    }}
+                    style={{
+                      width: 50,
+                      padding: "2px 4px",
+                      fontSize: 11,
+                      background: "#1e293b",
+                      color: "#f8fafc",
+                      border: "1px solid #334155",
+                      borderRadius: 4,
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {degreeCounts.map(deg => (
+                      <option key={deg} value={deg}>{deg}</option>
+                    ))}
+                  </select>
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Edge Obs:</label>
                   <select
@@ -1212,7 +1222,21 @@ export default function App() {
             boxSelectEnabled={boxSelectMode}
           />
         ) : (
-          !error && <p style={{ padding: 40 }}>Loading graph...</p>
+          !error && (
+            <div style={{ padding: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  border: "3px solid #334155",
+                  borderTopColor: "#6366f1",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              <p style={{ margin: 0, color: "#94a3b8", fontSize: 14 }}>Loading Graph</p>
+            </div>
+          )
         )}
       </main>
 
