@@ -1086,7 +1086,19 @@ export default function App() {
         {sidebarTab === "insights" && (
           <div>
             {insightsLoading && (
-              <p style={{ fontSize: 13, color: "#94a3b8", padding: "20px 0", textAlign: "center" }}>Analyzing graph...</p>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "20px 0" }}>
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    border: "2px solid #334155",
+                    borderTopColor: "#6366f1",
+                    borderRadius: "50%",
+                    animation: "spin 0.8s linear infinite",
+                  }}
+                />
+                <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>Analyzing graph</p>
+              </div>
             )}
             {insightsError && (
               <p style={{ fontSize: 13, color: "#ef4444", padding: "8px 0" }}>{insightsError}</p>
@@ -1234,7 +1246,7 @@ export default function App() {
                   animation: "spin 0.8s linear infinite",
                 }}
               />
-              <p style={{ margin: 0, color: "#94a3b8", fontSize: 14 }}>Loading Graph</p>
+              <p style={{ margin: 0, color: "#94a3b8", fontSize: 14 }}>Loading graph</p>
             </div>
           )
         )}
