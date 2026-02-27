@@ -118,6 +118,8 @@ export default function App() {
   const [connectionsSearch, setConnectionsSearch] = useState("");
   const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
   const [minDegree, setMinDegree] = useState(1);
+  const [minEdgeObservations, setMinEdgeObservations] = useState(0);
+  const [showFiltersList, setShowFiltersList] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"graph" | "insights">("graph");
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -217,10 +219,24 @@ export default function App() {
   const displayData = useMemo(() => {
     if (!graphData) return null;
 
-    // Filter raw graph data first
-    const visibleNodes = graphData.nodes.filter(n => !hiddenNodes.has(n.email) && (n.degree ?? 0) >= minDegree);
+    // Step 1: Filter edges by min observations
+    const obsCount = (e: Edge) => (e.properties?.comments?.length ?? 0);
+    const edgesByObs = graphData.edges.filter(e => obsCount(e) >= minEdgeObservations);
+
+    // Step 2: Node set from those edges
+    const emailsInFilteredEdges = new Set(edgesByObs.flatMap(e => [e.source, e.target]));
+
+    // Step 3: Filter nodes (in filtered edges, not hidden, degree >= minDegree)
+    const visibleNodes = graphData.nodes.filter(n =>
+      !hiddenNodes.has(n.email) &&
+      emailsInFilteredEdges.has(n.email) &&
+      (n.degree ?? 0) >= minDegree
+    );
     const visibleEmails = new Set(visibleNodes.map(n => n.email));
-    const visibleEdges = graphData.edges.filter(e => visibleEmails.has(e.source) && visibleEmails.has(e.target));
+
+    // Step 4: Final edges (both endpoints visible)
+    const visibleEdges = edgesByObs.filter(e => visibleEmails.has(e.source) && visibleEmails.has(e.target));
+
     const filteredGraphData: GraphData = { nodes: visibleNodes, edges: visibleEdges };
 
     const finalize = (data: { nodes: any[], links: any[] }) => {
@@ -254,7 +270,13 @@ export default function App() {
     // Collapsed cluster view
     const { nodes, links } = toClusterGraph(filteredGraphData);
     return { nodes, links };
-  }, [graphData, viewMode, expandedCluster, hiddenNodes, minDegree]);
+  }, [graphData, viewMode, expandedCluster, hiddenNodes, minDegree, minEdgeObservations]);
+
+  const observationCounts = useMemo(() => {
+    if (!graphData) return [0];
+    const counts = [...new Set(graphData.edges.map(e => (e.properties?.comments?.length ?? 0)))].sort((a, b) => a - b);
+    return counts.length ? counts : [0];
+  }, [graphData]);
 
   const handleToggleVisibility = (email: string) => {
     setHiddenNodes(prev => {
@@ -841,6 +863,80 @@ export default function App() {
             );
           })()}
 
+          {/* Filters */}
+          <div style={{ marginBottom: 16 }}>
+            <button
+              onClick={() => setShowFiltersList(!showFiltersList)}
+              style={{
+                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                background: "none", border: "none", padding: 0, marginBottom: 8, cursor: "pointer",
+                textAlign: "left"
+              }}
+            >
+              <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>Filters</h3>
+              <span style={{ fontSize: 10, color: "#64748b" }}>{showFiltersList ? "▼" : "▶"}</span>
+            </button>
+
+            {showFiltersList && (
+              <div style={{ padding: "0 4px", display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                {meta && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
+                    <select
+                      value={minDegree}
+                      onChange={(e) => {
+                        setMinDegree(parseInt(e.target.value, 10));
+                        setLayoutSignal(s => s + 1);
+                      }}
+                      style={{
+                        width: 50,
+                        padding: "2px 4px",
+                        fontSize: 11,
+                        background: "#1e293b",
+                        color: "#f8fafc",
+                        border: "1px solid #334155",
+                        borderRadius: 4,
+                        outline: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {Array.from(new Set(meta.degrees.map(d => d.degree)))
+                        .sort((a, b) => a - b)
+                        .map(deg => (
+                          <option key={deg} value={deg}>{deg}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Edge Obs:</label>
+                  <select
+                    value={minEdgeObservations}
+                    onChange={(e) => {
+                      setMinEdgeObservations(parseInt(e.target.value, 10));
+                      setLayoutSignal(s => s + 1);
+                    }}
+                    style={{
+                      width: 50,
+                      padding: "2px 4px",
+                      fontSize: 11,
+                      background: "#1e293b",
+                      color: "#f8fafc",
+                      border: "1px solid #334155",
+                      borderRadius: 4,
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {observationCounts.map(obs => (
+                      <option key={obs} value={obs}>{obs}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Cluster legend */}
           {!expandedCluster && clusterInfo.length > 0 && (
             <div style={{ marginBottom: 16 }}>
@@ -885,36 +981,6 @@ export default function App() {
                 <h3 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "#94a3b8" }}>People</h3>
                 <span style={{ fontSize: 10, color: "#64748b" }}>{showDegreesList ? "▼" : "▶"}</span>
               </button>
-
-              {showDegreesList && (
-                <div style={{ marginBottom: 12, padding: "0 4px", display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Min Degree:</label>
-                  <select
-                    value={minDegree}
-                    onChange={(e) => {
-                      setMinDegree(parseInt(e.target.value, 10));
-                      setLayoutSignal(s => s + 1);
-                    }}
-                    style={{
-                      width: 50,
-                      padding: "2px 4px",
-                      fontSize: 11,
-                      background: "#1e293b",
-                      color: "#f8fafc",
-                      border: "1px solid #334155",
-                      borderRadius: 4,
-                      outline: "none",
-                      cursor: "pointer"
-                    }}
-                  >
-                    {Array.from(new Set(meta.degrees.map(d => d.degree)))
-                      .sort((a, b) => a - b)
-                      .map(deg => (
-                        <option key={deg} value={deg}>{deg}</option>
-                      ))}
-                  </select>
-                </div>
-              )}
 
               {showDegreesList && (
                 <>
