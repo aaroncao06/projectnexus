@@ -150,7 +150,7 @@ export default function ChatPanel({ messages, onSend, onClose, loading, error }:
   return (
     <div style={styles.panel}>
       <div style={styles.header}>
-        <span style={styles.title}>RAG Chat</span>
+        <span style={styles.title}>Chat</span>
         <button type="button" onClick={onClose} style={styles.closeBtn}>
           Close
         </button>
